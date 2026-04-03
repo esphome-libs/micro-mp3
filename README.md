@@ -1,10 +1,11 @@
 # microMP3 - Embedded MP3 Decoder Wrapper
 
 [![CI](https://github.com/esphome-libs/micro-mp3/actions/workflows/ci.yml/badge.svg)](https://github.com/esphome-libs/micro-mp3/actions/workflows/ci.yml)
+[![Component Registry](https://components.espressif.com/components/esphome/micro-mp3/badge.svg)](https://components.espressif.com/components/esphome/micro-mp3)
 
 Streaming MP3 decoder for embedded devices. Fixed-point decoder forked from OpenCore with frame synchronization, PSRAM-aware allocation, and lazy initialization. Supports MPEG 1, 2, and 2.5 Layer III.
 
-[![OHF - Open Home Foundation](https://img.shields.io/badge/OHF-Open_Home_Foundation-blue)](https://www.openhomefoundation.org/)
+[![A project from the Open Home Foundation](https://www.openhomefoundation.org/badges/ohf-project.png)](https://www.openhomefoundation.org/)
 
 ## Features
 
