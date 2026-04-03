@@ -1,6 +1,6 @@
 {
     "name": "microMP3",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Wrapper for the OpenCore MP3 decoder with PSRAM support for MP3 audio decoding",
     "authors": [
         {
