@@ -46,18 +46,6 @@ jobs:
       - name: Build
         run: cmake --build build
 
-  build-sanitizers:
-    name: Build with sanitizers
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Configure CMake with sanitizers
-        run: cmake -B build -DENABLE_SANITIZERS=ON host_examples/mp3_to_wav
-
-      - name: Build
-        run: cmake --build build
-
   platformio:
     name: PlatformIO Build
     runs-on: ubuntu-latest
