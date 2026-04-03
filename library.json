@@ -1,0 +1,19 @@
+{
+    "name": "microMP3",
+    "version": "0.1.0",
+    "description": "Wrapper for the OpenCore MP3 decoder with PSRAM support for MP3 audio decoding",
+    "authors": [
+        {
+            "name": "Kevin Ahrendt",
+            "email": "kevin.ahrendt@openhomefoundation.org"
+        }
+    ],
+    "license": "Apache-2.0",
+    "keywords": ["mp3", "audio", "codec"],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/esphome-libs/micro-mp3"
+    },
+    "frameworks": "espidf",
+    "platforms": "espressif32"
+}

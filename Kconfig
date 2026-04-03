@@ -1,0 +1,52 @@
+menu "MP3 Decoder"
+
+    config MP3_COMPONENT
+        bool
+        default y
+
+    choice MP3_DECODER_MEMORY_PREFERENCE
+        prompt "Memory preference for MP3 decoder state"
+        default MP3_DECODER_PREFER_PSRAM
+        help
+            Choose memory allocation preference for the MP3 decoder state buffers.
+
+            The decoder state is allocated once at initialization and accessed
+            during each decode operation.
+
+            - Prefer PSRAM: Saves internal RAM, slight performance penalty
+            - Prefer internal: Better performance, uses precious internal RAM
+            - PSRAM only: Fails if PSRAM unavailable
+            - Internal only: Never uses PSRAM
+
+        config MP3_DECODER_PREFER_PSRAM
+            bool "Prefer PSRAM, fall back to internal RAM"
+            help
+                Try to allocate from PSRAM first. If PSRAM allocation fails or
+                is unavailable, fall back to internal RAM.
+
+                Recommended for most use cases to conserve internal RAM.
+
+        config MP3_DECODER_PREFER_INTERNAL
+            bool "Prefer internal RAM, fall back to PSRAM"
+            help
+                Try to allocate from internal RAM first. If internal RAM
+                allocation fails, fall back to PSRAM.
+
+                May provide slightly better performance at the cost of using
+                more internal RAM.
+
+        config MP3_DECODER_PSRAM_ONLY
+            bool "PSRAM only (fail if unavailable)"
+            depends on SPIRAM
+            help
+                Only allocate from PSRAM. If PSRAM is not available or allocation
+                fails, the decoder will fail to initialize.
+
+        config MP3_DECODER_INTERNAL_ONLY
+            bool "Internal RAM only"
+            help
+                Never use PSRAM for decoder state. Only use internal RAM.
+
+    endchoice
+
+endmenu

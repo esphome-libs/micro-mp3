@@ -1,0 +1,9 @@
+microMP3
+Copyright 2026 Kevin Ahrendt
+
+This product includes software from the OpenCore MP3 decoder library
+(opencore-mp3dec), originally developed by PacketVideo:
+
+  Copyright (C) 1998-2009 PacketVideo
+  Licensed under the Apache License, Version 2.0
+  https://android.googlesource.com/platform/external/opencore/+/refs/heads/main/codecs_v2/audio/mp3/dec/

@@ -1,0 +1,11 @@
+## IDF Component Manager Manifest File
+name: "micro-mp3"
+dependencies:
+  idf: ">=4.4"
+description: "OpenCore MP3 decoder library for ESP32 - MP3 audio decoding with ESP-IDF support"
+license: "Apache-2.0"
+maintainers:
+  - Kevin Ahrendt <kevin.ahrendt@openhomefoundation.org>
+version: "0.1.0"
+url: https://github.com/esphome-libs/micro-mp3
+repository: https://github.com/esphome-libs/micro-mp3.git
