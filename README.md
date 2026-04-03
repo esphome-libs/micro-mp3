@@ -119,7 +119,7 @@ Use `result < 0` to check for any error. Use `result >= 0` for non-error (succes
 | `MP3_MAX_SAMPLES_PER_FRAME` | 1152 | Max PCM samples per channel per frame (MPEG1) |
 | `MP3_MAX_OUTPUT_CHANNELS` | 2 | Max output channels |
 | `MP3_MIN_OUTPUT_BUFFER_BYTES` | 4608 | Min output buffer size (1152 x 2ch x 2 bytes) |
-| `MP3_INPUT_BUFFER_SIZE` | 8192 | Internal input buffer size |
+| `MP3_INPUT_BUFFER_SIZE` | 1536 | Internal input buffer size |
 
 ### Equalizer Presets (`Mp3Equalizer`)
 
@@ -166,10 +166,11 @@ Prefer PSRAM (the default) conserves internal RAM at a slight performance cost. 
 
 | Allocation | Size | Notes |
 | ---------- | ---- | ----- |
-| Decoder state | `sizeof(tmp3dec_file)` | Allocated via `pvmp3_decoderMemRequirements()`; PSRAM preferred by default |
-| Internal input buffer | 8KB | MP3 frame accumulation (`MP3_INPUT_BUFFER_SIZE`) |
-| Probe output buffer | 4.5KB | Scratch buffer for first-frame probe; freed after `reset()` |
-| PCM output buffer | up to 4.5KB | User-provided; `MP3_MIN_OUTPUT_BUFFER_BYTES` (4608 bytes) |
+| Decoder state | ~27.3KB | Allocated via `pvmp3_decoderMemRequirements()`; PSRAM preferred by default |
+| Internal input buffer | 1.5KB | MP3 frame accumulation (`MP3_INPUT_BUFFER_SIZE`, 1536 bytes) |
+| PCM output buffer | 4.5KB | User-provided; `MP3_MIN_OUTPUT_BUFFER_BYTES` (4608 bytes) |
+
+Total internal allocation: ~28.8KB (decoder state + input buffer). The PCM output buffer is caller-owned.
 
 ## License
 
