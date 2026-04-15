@@ -637,33 +637,33 @@ Mp3Result Mp3Decoder::decode_direct(tPVMP3DecoderExternal& ext, const uint8_t* i
         return MP3_NEED_MORE_DATA;
     }
 
-    // mp3_len == -1: No valid MP3 sync at position 0.
-    // Try to feed the data to OpenCore and let it handle sync scanning.
-    // const_cast is safe: OpenCore only reads from pInputBuffer
-    ext.pInputBuffer = const_cast<uint8*>(input);
-    ext.inputBufferCurrentLength = static_cast<int32>(input_len);
-    ext.inputBufferMaxLength = static_cast<int32>(input_len);
-
-    ERROR_CODE status = pvmp3_framedecoder(&ext, this->decoder_memory_);
-
-    if (status == NO_DECODING_ERROR) {
-        bytes_consumed = static_cast<size_t>(ext.inputBufferUsedLength);
-        frame_decoded = true;
-        return MP3_OK;
+    // mp3_len == -1: no valid MP3 sync at position 0.
+    //
+    // We deliberately do NOT hand the raw slice to pvmp3 for sync scanning
+    // here. pvmp3's sync-scan path (pvmp3_header_sync / fillMainDataBuf) does
+    // not bound-check the caller's buffer against the position of the found
+    // sync, so a sync discovered near the tail of a short buffer causes
+    // reads past the end (found via ASan fuzzing). Instead, do a lightweight
+    // byte-level scan for a candidate sync pair and let the next decode()
+    // call re-probe at that position through the validated happy path.
+    size_t skip = 1;  // offset 0 already failed; guarantee forward progress
+    // NOLINTNEXTLINE(readability-magic-numbers)
+    while (skip + 1 < input_len && !(input[skip] == 0xFF && (input[skip + 1] & 0xE0) == 0xE0)) {
+        skip++;
     }
-    if (status == NO_ENOUGH_MAIN_DATA_ERROR ||
-        ext.inputBufferUsedLength >= static_cast<int32>(input_len)) {
-        // Not enough data -- buffer for next call
-        size_t to_copy = std::min(input_len, MP3_INPUT_BUFFER_SIZE);
-        std::memcpy(this->input_buffer_, input, to_copy);
-        this->input_buffer_fill_ = to_copy;
-        bytes_consumed = to_copy;
-        return MP3_NEED_MORE_DATA;
+    // If no candidate was found in input[1..input_len-2], consume everything
+    // except a possible trailing 0xFF that could be the first half of a sync
+    // straddling the chunk boundary.
+    if (skip + 1 >= input_len) {
+        // NOLINTNEXTLINE(readability-magic-numbers)
+        if (input_len >= 2 && input[input_len - 1] == 0xFF) {
+            skip = input_len - 1;
+        } else {
+            skip = (input_len > 0) ? input_len : 1;
+        }
     }
-    // Skip at least 1 byte to guarantee forward progress
-    bytes_consumed =
-        (ext.inputBufferUsedLength > 0) ? static_cast<size_t>(ext.inputBufferUsedLength) : 1;
-    return MP3_DECODE_ERROR;
+    bytes_consumed = skip;
+    return MP3_NEED_MORE_DATA;
 }
 
 Mp3Result Mp3Decoder::decode_buffered(tPVMP3DecoderExternal& ext, const uint8_t* input,
@@ -691,36 +691,50 @@ Mp3Result Mp3Decoder::decode_buffered(tPVMP3DecoderExternal& ext, const uint8_t*
                 bytes_consumed = to_copy;
             }
             return MP3_NEED_MORE_DATA;
+        } else {
+            // mp3_len == -1: the byte at input_buffer_[0] looked like a sync
+            // word but the rest of the header was invalid. Do NOT hand
+            // unvalidated bytes to pvmp3 -- its internal parser has
+            // out-of-bounds read paths when given adversarial data (the
+            // internal buffer is MP3_INPUT_BUFFER_SIZE bytes but pvmp3
+            // treats pBuffer as a BUFSIZE=8192 circular buffer, so reads
+            // past our allocation slip past pvmp3's own bounds checks).
+            // Scan forward in the already-buffered bytes for the next sync
+            // candidate and shift it to the start.
+            size_t shift = 1;
+            // NOLINTNEXTLINE(readability-magic-numbers)
+            while (shift + 1 < this->input_buffer_fill_ &&
+                   !(this->input_buffer_[shift] == 0xFF &&
+                     (this->input_buffer_[shift + 1] & 0xE0) == 0xE0)) {
+                shift++;
+            }
+            if (shift >= this->input_buffer_fill_) {
+                this->input_buffer_fill_ = 0;
+            } else {
+                size_t remaining = this->input_buffer_fill_ - shift;
+                std::memmove(this->input_buffer_, this->input_buffer_ + shift, remaining);
+                this->input_buffer_fill_ = remaining;
+            }
+            return MP3_NEED_MORE_DATA;
         }
-        // mp3_len == -1: no valid MP3 sync -- fall through to fill-and-decode below
     }
 
-    if (this->expected_frame_length_ > 0) {
-        if (this->input_buffer_fill_ < this->expected_frame_length_) {
-            // We know the frame size -- copy only what's needed
-            size_t needed = this->expected_frame_length_ - this->input_buffer_fill_;
-            size_t space_available = MP3_INPUT_BUFFER_SIZE - this->input_buffer_fill_;
-            size_t to_copy = std::min({needed, input_len, space_available});
-            if (to_copy > 0) {
-                std::memcpy(this->input_buffer_ + this->input_buffer_fill_, input, to_copy);
-                this->input_buffer_fill_ += to_copy;
-                bytes_consumed = to_copy;
-            }
-
-            if (this->input_buffer_fill_ < this->expected_frame_length_) {
-                // Still incomplete -- wait for more data
-                return MP3_NEED_MORE_DATA;
-            }
-        }
-        // Frame is complete in the internal buffer -- fall through to decode
-    } else {
-        // No valid MP3 header -- fill buffer and let OpenCore handle it
+    // By construction above, expected_frame_length_ is now > 0 (the invalid-
+    // header path already returned via MP3_NEED_MORE_DATA after shifting).
+    if (this->input_buffer_fill_ < this->expected_frame_length_) {
+        // We know the frame size -- copy only what's needed
+        size_t needed = this->expected_frame_length_ - this->input_buffer_fill_;
         size_t space_available = MP3_INPUT_BUFFER_SIZE - this->input_buffer_fill_;
-        size_t to_copy = std::min(input_len, space_available);
+        size_t to_copy = std::min({needed, input_len, space_available});
         if (to_copy > 0) {
             std::memcpy(this->input_buffer_ + this->input_buffer_fill_, input, to_copy);
             this->input_buffer_fill_ += to_copy;
             bytes_consumed = to_copy;
+        }
+
+        if (this->input_buffer_fill_ < this->expected_frame_length_) {
+            // Still incomplete -- wait for more data
+            return MP3_NEED_MORE_DATA;
         }
     }
 

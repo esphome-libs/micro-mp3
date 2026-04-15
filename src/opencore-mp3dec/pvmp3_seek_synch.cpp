@@ -173,10 +173,18 @@ ERROR_CODE pvmp3_frame_synch(tPVMP3DecoderExternal *pExt,
         }
 
         int32 freq_index = (temp << 20) >> 30;
+        /*
+         * microMP3 FIX: bitrate_index 15 ("reserved") would read past the
+         * end of the [3][15] mp3_bitrate table here, the same OOB closed at
+         * the parse site in pvmp3_decode_header.cpp. This sync-scan path is
+         * reached independently (it can run before the parser's guard fires),
+         * so reject 15 here too. Found by libFuzzer code review.
+         */
+        int32 bitrate_index = (temp << 16) >> 28;
 
-        if (version != INVALID_VERSION && (freq_index != 3))
+        if (version != INVALID_VERSION && (freq_index != 3) && (bitrate_index != 15) && (bitrate_index != 0))
         {
-            int32 numBytes = fxp_mul32_Q28(mp3_bitrate[version][(temp<<16)>>28] << 20,
+            int32 numBytes = fxp_mul32_Q28(mp3_bitrate[version][bitrate_index] << 20,
                                            inv_sfreq[freq_index]);
 
             numBytes >>= (20 - version);
@@ -289,7 +297,12 @@ ERROR_CODE pvmp3_header_sync(tmp3Bits  *inputStream)
 
     val = (uint16)getUpTo17bits(inputStream, SYNC_WORD_LNGTH);
 
-    while (((val&SYNC_WORD) != SYNC_WORD) && (inputStream->usedBits < availableBits))
+    // microMP3 FIX: getUpTo9bits() unconditionally reads 2 bytes
+    // (pBuffer[offset] and pBuffer[offset+1]), so we must have at least 2
+    // bytes remaining before calling it. The upstream condition only checked
+    // usedBits < availableBits, letting the read walk one byte past the
+    // buffer end when usedBits was in the final byte. Found by ASan fuzzing.
+    while (((val&SYNC_WORD) != SYNC_WORD) && (inputStream->usedBits + 16 <= availableBits))
     {
         val <<= 8;
         val |= getUpTo9bits(inputStream, 8);

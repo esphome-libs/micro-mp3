@@ -275,6 +275,23 @@ void pvmp3_dequantize_sample(int32 is[SUBBANDS_NUMBER*FILTERBANK_BANDS],
                 int32 temp2 = fxp_mul32_Q32((ss - cb_begin) << 16, mp3_shortwindBandWidths[sfreq][cb_width]);
                 temp2 = (temp2 + 1) >> 15;
 
+                /*
+                 * microMP3 FIX: temp2 is the short-block sub-window index
+                 * (0..2). In a spec-compliant stream the fxp_mul32_Q32 above
+                 * always produces one of those three values, but adversarial
+                 * input can drive it negative or past 2, causing out-of-bounds
+                 * reads on subblock_gain[3] and scalefac->s[13][cb]. Clamp.
+                 * Found by UBSan fuzzing.
+                 */
+                if (temp2 < 0)
+                {
+                    temp2 = 0;
+                }
+                else if (temp2 > 2)
+                {
+                    temp2 = 2;
+                }
+
                 global_gain  = (gr_info->global_gain);
                 global_gain -=  gr_info->subblock_gain[temp2] << 3;
                 global_gain -= (1 + gr_info->scalefac_scale) * (scalefac->s[temp2][cb] << 1);

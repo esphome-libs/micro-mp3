@@ -571,7 +571,37 @@ void fillMainDataBuf(void  *pMem, int32 temp)
     int32 offset = (pVars->inputStream.usedBits) >> INBUF_ARRAY_INDEX_SHIFT;
 
     /*
+     * microMP3 FIX: bound the read against the caller's inputBufferCurrentLength.
+     * pvmp3 was written assuming pInputBuffer is a BUFSIZE-byte circular buffer,
+     * so the original code only bounds-checks against BUFSIZE. The micro-mp3
+     * wrapper hands pvmp3 either a caller-owned slice (zero-copy direct path)
+     * or the 1536-byte internal buffer; in both cases BUFSIZE is an overcommit
+     * and adversarial side-info can drive offset+temp past the real allocation.
+     * Clamp temp so no read ever reaches past inputBufferCurrentLength. Downstream
+     * Huffman/dequant parsing will then produce a garbage-data error we report
+     * as MP3_DECODE_ERROR. Found by libFuzzer + ASan.
+     */
+    {
+        int32 avail = (int32)pVars->inputStream.inputBufferCurrentLength;
+        if (offset >= avail)
+        {
+            temp = 0;
+        }
+        else if (temp > avail - offset)
+        {
+            temp = avail - offset;
+        }
+    }
+
+    /*
      *  Check if input circular buffer boundaries need to be enforced
+     *
+     *  microMP3 NOTE: the clamp above ensures temp <= avail - offset, and
+     *  the wrapper never sets inputBufferCurrentLength larger than
+     *  MP3_INPUT_BUFFER_SIZE (1536), well below BUFSIZE (8192). So
+     *  (offset + temp) < BUFSIZE always holds in practice and the `else`
+     *  branch below is dead. Kept intact to preserve upstream pvmp3
+     *  semantics in case the wrapper assumption ever changes.
      */
     if ((offset + temp) < BUFSIZE)
     {
@@ -589,18 +619,19 @@ void fillMainDataBuf(void  *pMem, int32 temp)
         }
         else
         {
-            int32 tmp1 = *(ptr++);
-            for (int32 nBytes = temp >> 1; nBytes != 0; nBytes--)  /* read main data. */
+            /*
+             * microMP3 FIX: the original unrolled loop pre-read tmp1 before
+             * the loop and then re-read tmp1 at the end of every iteration
+             * (so each pass did 2 reads from `ptr` but 2 writes to the main
+             * data stream, meaning the tail iteration read one byte past
+             * `temp`). On valid streams the input buffer always had trailing
+             * slack so it went unnoticed; libFuzzer + ASan caught it when a
+             * frame landed at the very end of the caller's allocation.
+             * Replaced with a straight byte loop -- exactly `temp` reads.
+             */
+            for (int32 i = 0; i < temp; i++)
             {
-                int32 tmp2 = *(ptr++);
-                fillDataBuf(&pVars->mainDataStream, tmp1);
-                fillDataBuf(&pVars->mainDataStream, tmp2);
-                tmp1 = *(ptr++);
-            }
-
-            if (temp&1)
-            {
-                fillDataBuf(&pVars->mainDataStream, tmp1);
+                fillDataBuf(&pVars->mainDataStream, *(ptr++));
             }
 
             /* adjust circular buffer counter */
