@@ -167,9 +167,27 @@ int32 pvmp3_huffman_parsing(int32 is[SUBBANDS_NUMBER*FILTERBANK_BANDS],
     }
     else
     {          /* Find region boundary for long block case. */
+        /*
+         * microMP3 FIX: clamp the scale factor band indices to the 23-entry
+         * table. region0_count is 4 bits (0..15) and region1_count is 3 bits
+         * (0..7) in the side-info bitstream, so i and i+region1_count+1 can
+         * reach 16 and 24 respectively -- both out of bounds for
+         * mp3_sfBandIndex[sfreq].l[23]. A spec-compliant stream never exceeds
+         * 22, but an adversarial stream does, producing an out-of-bounds
+         * read. Found by UBSan fuzzing.
+         */
         i = grInfo->region0_count + 1;
+        if (i > 22)
+        {
+            i = 22;
+        }
+        int32 r2i = (int32)i + (int32)grInfo->region1_count + 1;
+        if (r2i > 22)
+        {
+            r2i = 22;
+        }
         region1Start = mp3_sfBandIndex[sfreq].l[i];
-        region2Start = mp3_sfBandIndex[sfreq].l[i + grInfo->region1_count + 1];
+        region2Start = mp3_sfBandIndex[sfreq].l[r2i];
     }
 
     /* Read bigvalues area. */

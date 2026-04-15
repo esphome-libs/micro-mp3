@@ -59,7 +59,28 @@
 ; DEFINES
 ; Include all pre-processor statements here.
 ----------------------------------------------------------------------------*/
-#define BUFSIZE   8192   // big enough to hold 4608 bytes == biggest mp3 frame
+// microMP3 NOTE: the original comment here read
+//   "big enough to hold 4608 bytes == biggest mp3 frame"
+// which is wrong on two counts:
+//   1. 4608 is the biggest decoded PCM *output* size (1152 samples * 2ch * 2B),
+//      not a compressed MP3 frame. The biggest compressed frame is 1441 bytes
+//      (MPEG1 Layer III, 320 kbps, 32 kHz, padded).
+//   2. BUFSIZE isn't sized for one frame in the first place. It's the size of
+//      the bit reservoir ring buffer (mainDataBuffer[BUFSIZE]), which has to
+//      hold the current frame's main data PLUS up to 511 bytes of prior
+//      frames' main data referenced via the main_data_begin back-pointer.
+//      8192 is "comfortably more than 1441 + 511, rounded to a power of two."
+//
+// pvmp3 also reuses BUFSIZE as the wrap modulus for reads of the *input*
+// buffer (in getNbits / getUpTo9bits / getUpTo17bits / fillMainDataBuf), which
+// implicitly assumes the caller supplies an 8192-byte circular buffer. The
+// micro-mp3 wrapper does not -- it hands pvmp3 a slice sized for one frame
+// (<= 1536 bytes). The wrapper is responsible for keeping usedBits within
+// inputBufferCurrentLength so the modulo arithmetic is harmless (offset &
+// 8191 == offset whenever offset < 1536); the input-side bound check added
+// to fillMainDataBuf in this fork closes the one path where pvmp3 itself
+// would have over-read.
+#define BUFSIZE   8192
 
 #define CHAN           2
 #define GRAN           2

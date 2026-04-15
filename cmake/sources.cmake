@@ -23,7 +23,6 @@ function(mp3_get_sources)
     set(MP3_DIR "${_MP3_OPENCORE_DIR}")
     # --------------------------------------------------------------------------
     # OpenCore MP3 decoder sources
-    # (pvmp3_decoder.cpp excluded: depends on missing OSCL headers)
     # (asm/*.s excluded: ARM assembly not needed for generic builds)
     # --------------------------------------------------------------------------
     set(MP3_LIB_SOURCES

@@ -182,7 +182,14 @@ ERROR_CODE pvmp3_decode_header(tmp3Bits  *inputStream,
     info->emphasis           = (temp << 30) >> 30;  /* 2 */
 
 
-    if (!info->bitrate_index || info->sampling_frequency == 3)
+    /*
+     * microMP3 FIX: also reject bitrate_index == 15 ("reserved/invalid"
+     * per the MP3 spec). mp3_bitrate is declared as int16[3][15], so
+     * indexing it with 15 is a guaranteed out-of-bounds read and was
+     * reached via pvmp3_get_main_data_size on an adversarial stream.
+     * Found by UBSan fuzzing.
+     */
+    if (!info->bitrate_index || info->bitrate_index == 15 || info->sampling_frequency == 3)
     {
         err = UNSUPPORTED_FREE_BITRATE;
     }
