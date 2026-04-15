@@ -616,13 +616,13 @@ Mp3Result Mp3Decoder::decode_direct(tPVMP3DecoderExternal& ext, const uint8_t* i
                 return MP3_OK;
             }
             if (status == NO_ENOUGH_MAIN_DATA_ERROR) {
-                // OpenCore thinks the frame needs more data than we provided.
-                // Buffer what we have and let the caller feed more.
-                std::memcpy(this->input_buffer_, input, input_len);
-                this->input_buffer_fill_ = input_len;
-                this->expected_frame_length_ = 0;
-                bytes_consumed = input_len;
-                return MP3_NEED_MORE_DATA;
+                // We handed pvmp3 a full frame (input_len >= frame_size) bounded
+                // to exactly frame_size, computed from the same formula pvmp3
+                // uses internally, so this path is only reachable when the
+                // header is malformed and the two parsers disagree. More input
+                // can't rescue a corrupt frame so skip it and resync.
+                bytes_consumed = frame_size;
+                return MP3_DECODE_ERROR;
             }
             // Genuine decode error -- skip the entire bad frame so the caller
             // advances to the next potential MP3 header
