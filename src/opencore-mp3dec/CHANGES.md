@@ -93,12 +93,14 @@ Replaced the manual multi-step bit-scan cascade in `pvmp3_normalize()` with
 tree followed by a switch statement to count leading zeros. The `__builtin_clz`
 intrinsic is equivalent and produces a native `CLZ` instruction on ARM and Xtensa.
 
+## Removed Files
+
+- **`pvmp3_decoder.cpp` / `pvmp3_decoder.h`** -- depended on OSCL (Operating System
+  Compatibility Library) headers that are not included. All required functionality
+  is available through `pvmp3_framedecoder.cpp`. Deleted from the fork to keep the
+  dead `pvmp3_frame_synch` call site from confusing future audits.
+
 ## Excluded from Build
 
-These files are present in the directory but excluded in `cmake/sources.cmake`:
-
-- **`pvmp3_decoder.cpp`** -- depends on OSCL (Operating System Compatibility
-  Library) headers that are not included. All required functionality is available
-  through `pvmp3_framedecoder.cpp`.
 - **`asm/*.s`** -- ARM and Windows Mobile assembly. The C-equivalent fixed-point
   routines in `pv_mp3dec_fxd_op_c_equivalent.h` are used on all platforms.

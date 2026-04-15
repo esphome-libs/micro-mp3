@@ -46,7 +46,7 @@ pio run -e esp32-s3 -t upload -t monitor
 - **Header-only probe** — first `decode()` call returns `MP3_STREAM_INFO_READY` (2) after parsing the MP3 frame header (no audio decoded). Stream properties (`sample_rate_`, `output_channels_`, `bitrate_`) are set from the 4-byte header. Up to one frame of input is buffered internally; `bytes_consumed` reflects bytes buffered. Caller should advance input by `bytes_consumed` and set up their audio pipeline, then call `decode()` again — the first frame is decoded from the internal buffer (no audio is discarded).
 - **No AAC+ equivalent** — MP3 is simpler; no SBR or Parametric Stereo handling needed.
 - **ESP32 memory** — uses `heap_caps_malloc_prefer()` with Kconfig-controlled placement (`MP3_DECODER_PREFER_PSRAM`, etc.). Host builds use plain `malloc`.
-- **`pvmp3_decoder.cpp` excluded** — depends on missing OSCL headers; all required functionality is available through `pvmp3_framedecoder.cpp` and friends. Excluded in `cmake/sources.cmake`.
+- **`pvmp3_decoder.cpp` / `pvmp3_decoder.h` removed** — depended on missing OSCL headers; all required functionality is available through `pvmp3_framedecoder.cpp` and friends. Deleted from the fork (see `src/opencore-mp3dec/CHANGES.md`).
 - **No ARM assembly compiled** — `asm/*.s` excluded; the C equivalent fixed-point routines (`pv_mp3dec_fxd_op_c_equivalent.h`) are used on all platforms. No Xtensa-optimized multiply path (unlike micro-aac).
 
 ## Configuration (Kconfig)
