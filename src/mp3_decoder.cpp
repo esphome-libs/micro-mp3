@@ -300,11 +300,25 @@ Mp3Result Mp3Decoder::initialize() {
 Mp3Result Mp3Decoder::run_probe(const uint8_t* input, size_t input_len, size_t& bytes_consumed) {
     // Parse the first MP3 frame header to determine stream properties.
     // No decoding needed -- all info is in the 4-byte header.
+    //
+    // The probe does NOT consume the frame body. Two outcomes on success:
+    //   Fast path  (input_buffer_fill_ == 0 here): parse the header in
+    //     place from the caller's input, leave the internal buffer empty,
+    //     and report bytes_consumed = 0. The caller's input still holds
+    //     the full frame, so the next decode() call enters decode_direct()
+    //     and zero-copies into pvmp3.
+    //   Slow path  (header arrived in pieces): accumulate up to 4 bytes
+    //     in the internal buffer, then return with input_buffer_fill_ == 4.
+    //     The next decode() call enters decode_buffered() which pulls
+    //     frame_length - 4 more bytes from the caller.
+    // In both cases the caller's input is not drained of frame body bytes,
+    // so "input empty" remains a valid EOS signal even for single-frame files.
+    bytes_consumed = 0;
     const uint8_t* header_data = nullptr;
     size_t header_data_len = 0;
 
     if (this->input_buffer_fill_ > 0) {
-        // Accumulate enough bytes in the internal buffer to parse the header
+        // Slow path: top up the internal buffer to 4 header bytes
         if (this->input_buffer_fill_ < 4) {
             size_t need = 4 - this->input_buffer_fill_;
             size_t to_copy = std::min(need, input_len);
@@ -319,21 +333,19 @@ Mp3Result Mp3Decoder::run_probe(const uint8_t* input, size_t input_len, size_t& 
         header_data = this->input_buffer_;
         header_data_len = this->input_buffer_fill_;
     } else {
+        // Fast path: parse directly from caller's input if we have 4 bytes;
+        // otherwise stash what we got and fall into the slow path next call.
+        if (input_len < 4) {
+            std::memcpy(this->input_buffer_, input, input_len);
+            this->input_buffer_fill_ = input_len;
+            bytes_consumed = input_len;
+            return MP3_NEED_MORE_DATA;
+        }
         header_data = input;
         header_data_len = input_len;
     }
 
     Mp3FrameInfo info = Mp3Decoder::parse_mp3_frame_header(header_data, header_data_len);
-
-    if (info.frame_length == 0) {
-        // Not enough data for header -- buffer what we have
-        if (this->input_buffer_fill_ == 0) {
-            std::memcpy(this->input_buffer_, input, input_len);
-            this->input_buffer_fill_ = input_len;
-            bytes_consumed = input_len;
-        }
-        return MP3_NEED_MORE_DATA;
-    }
 
     if (info.frame_length < 0) {
         // Invalid header at current position -- skip one byte to resync
@@ -350,37 +362,14 @@ Mp3Result Mp3Decoder::run_probe(const uint8_t* input, size_t input_len, size_t& 
         return MP3_NEED_MORE_DATA;
     }
 
-    // Valid header -- extract stream properties
+    // Valid header -- extract stream properties. Do NOT pull frame body
+    // bytes; the caller keeps them (fast path) or the internal buffer
+    // holds just the 4 header bytes (slow path).
     this->sample_rate_ = info.sample_rate;
     this->output_channels_ = info.channels;
     this->bitrate_ = info.bitrate_kbps;
     this->version_ = info.version;
-
-    size_t frame_size = static_cast<size_t>(info.frame_length);
-
-    // Buffer up to one full frame so the next decode() call can decode from
-    // the internal buffer without the caller needing to re-provide the data.
-    if (this->input_buffer_fill_ == 0) {
-        // No prior buffered data -- copy up to one frame from input
-        size_t to_copy = std::min(input_len, frame_size);
-        std::memcpy(this->input_buffer_, input, to_copy);
-        this->input_buffer_fill_ = to_copy;
-        bytes_consumed = to_copy;
-    } else {
-        // Header bytes were already buffered; append from new input to complete the frame
-        size_t already_consumed = bytes_consumed;  // bytes copied for header accumulation
-        size_t needed = frame_size - this->input_buffer_fill_;
-        size_t remaining_input = input_len - already_consumed;
-        size_t to_copy = std::min(needed, remaining_input);
-        if (to_copy > 0) {
-            std::memcpy(this->input_buffer_ + this->input_buffer_fill_, input + already_consumed,
-                        to_copy);
-            this->input_buffer_fill_ += to_copy;
-        }
-        bytes_consumed = already_consumed + to_copy;
-    }
-
-    this->expected_frame_length_ = frame_size;
+    this->expected_frame_length_ = static_cast<size_t>(info.frame_length);
 
     this->probe_done_ = true;
     return MP3_STREAM_INFO_READY;

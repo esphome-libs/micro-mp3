@@ -214,11 +214,19 @@ public:
     ///                    Must be at least MP3_MIN_OUTPUT_BUFFER_BYTES (4608 bytes)
     ///                    to handle worst case (MPEG1 stereo: 1152 * 2 * 2).
     /// @param[out] bytes_consumed Number of input bytes consumed. Always set,
-    ///                           even on error. For MP3_STREAM_INFO_READY, this
-    ///                       equals the bytes buffered internally (up to one
-    ///                       frame); advance input normally. The first frame
-    ///                       will be decoded from the internal buffer on the
-    ///                       next call. For MP3_DECODE_ERROR, advance by this
+    ///                           even on error. For MP3_STREAM_INFO_READY, the
+    ///                       probe does NOT consume the frame body: this is 0
+    ///                       in the common case (header parsed in place) or a
+    ///                       small value (<= 3) when the header arrived
+    ///                       piecemeal and bytes were copied to the internal
+    ///                       buffer to complete it. Advance the input pointer
+    ///                       by this amount; the frame body remains in the
+    ///                       caller's buffer (so "input empty" stays a valid
+    ///                       EOS signal even for single-frame files). ID3v2
+    ///                       tag bytes and resync skip bytes are reported via
+    ///                       separate MP3_NEED_MORE_DATA returns, not as part
+    ///                       of MP3_STREAM_INFO_READY.
+    ///                       For MP3_DECODE_ERROR, advance by this
     ///                       amount to skip the bad frame. For all other error
     ///                       codes (fatal errors), this is 0 -- do not advance.
     ///                       In the success case, this equals the bytes used
