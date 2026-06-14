@@ -108,6 +108,27 @@ which writes zeros to the scale-factor buffers. Reported as a
 `-Werror=maybe-uninitialized` build failure on xtensa-esp32s3 GCC
 (issue #7).
 
+### `s_tmp3dec_file.h` / `pvmp3_reorder.cpp` / `pvmp3_reorder.h`
+
+Enlarged the persistent `Scratch_mem` buffer from `int32[168]` to `int32[198]`
+to fix an out-of-bounds write in `pvmp3_reorder()`. The reorder loop copies a
+short block's three windows into `Scratch_mem[0 .. 3*sfb_lines-1]`, where
+`sfb_lines` is the width of the current scale-factor band. The old size 168
+covered only the 44.1 kHz table (widest short band `192-136 = 56`, `3*56 = 168`).
+For MPEG1 48 kHz (`mp3_sfBandIndex[1]`, short bands `{...,100,126,192}`) the
+widest band is `192-126 = 66`, so the loop writes `Scratch_mem[0..197]`, which
+is 30 int32 (120 bytes) past the buffer and into the following `perChan[0]`
+(its `used_freq_lines` and IMDCT `overlap[]` history). The trailing
+`pv_memcpy(&xr[ct], Scratch_mem, sfb_lines*3*sizeof(int32))` over-reads by the
+same amount. Any MPEG1 48 kHz stream with a short-block granule
+(`block_type == 2`) and `used_freq_lines > 378` triggers it, which is common in
+normal encodes. The write stays inside the single decoder allocation, so it is
+not heap-metadata corruption, but it corrupts the adjacent channel's overlap
+history and trips AddressSanitizer. 198 is the largest value any of the nine
+sample-rate tables needs; every other table needs `<= 168` and all other
+`Scratch_mem` consumers use fewer entries, so the added 30 slots are otherwise
+unused.
+
 ## Removed Files
 
 - **`pvmp3_decoder.cpp` / `pvmp3_decoder.h`** -- depended on OSCL (Operating System

@@ -87,7 +87,7 @@ extern "C"
         int32           num_channels;
         int32           predicted_frame_size;
         int32           frame_start;
-        int32           Scratch_mem[168];
+        int32           Scratch_mem[198]; /* worst case = 3 * widest short band (192-126, MPEG1 48 kHz) */
         tmp3dec_chan    perChan[CHAN];
         mp3ScaleFactors scaleFactors[CHAN];
         mp3SideInfo     sideInfo;
