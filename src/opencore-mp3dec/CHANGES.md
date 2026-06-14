@@ -46,11 +46,26 @@ fuzzing.
 
 ### `pvmp3_huffman_parsing.cpp`
 
-Clamp the scale-factor band-index lookups in the long-block branch of
-`pvmp3_huffman_parsing()` to the 23-entry `mp3_sfBandIndex[].l[]` table.
-The side-info fields `region0_count` (4 bits) and `region1_count`
-(3 bits) can combine to produce an index of up to 24 on adversarial
-streams, reading past the end of the table. Found by UBSan fuzzing.
+Two fixes:
+
+1. Clamp the scale-factor band-index lookups in the long-block branch of
+   `pvmp3_huffman_parsing()` to the 23-entry `mp3_sfBandIndex[].l[]` table.
+   The side-info fields `region0_count` (4 bits) and `region1_count`
+   (3 bits) can combine to produce an index of up to 24 on adversarial
+   streams, reading past the end of the table. Found by UBSan fuzzing.
+
+2. Fixed an out-of-bounds write in the count1 "second-chance" decode.
+   `pvmp3_huffman_quad_decoding()` writes four lines (`is[i..i+3]`), but the
+   second-chance guard only required `i < 576`. That allowed `i == 574`,
+   writing `is[576]`/`is[577]` one `int32` past `work_buf_int32[576]` into the
+   adjacent `circ_buffer`. `i == 574` is reachable when `big_values` leaves
+   `i` at an even, non-multiple-of-4 offset (e.g. `big_values == 285` gives
+   `i == 570`, then the first-chance loop advances it to 574) while a malformed
+   stream still has count1 bits (`usedBits < grBits`). The write stays within
+   the struct on the current layout, but it is UB and fragile to field
+   reordering. Tightened the guard to `i <= 576 - 4` so the quad only decodes
+   when it fits, matching the first-chance loop guard and leaving the existing
+   `(i-2) >= 576` cleanup unreachable. Found by code review.
 
 ### `pvmp3_dequantize_sample.cpp`
 
