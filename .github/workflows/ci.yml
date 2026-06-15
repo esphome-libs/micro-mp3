@@ -46,6 +46,21 @@ jobs:
       - name: Build
         run: cmake --build build
 
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Configure CMake
+        run: cmake -B tests/build -DENABLE_SANITIZERS=ON -DENABLE_WERROR=ON tests
+
+      - name: Build tests
+        run: cmake --build tests/build
+
+      - name: Run tests
+        run: ctest --test-dir tests/build --output-on-failure
+
   platformio:
     name: PlatformIO Build
     runs-on: ubuntu-latest
