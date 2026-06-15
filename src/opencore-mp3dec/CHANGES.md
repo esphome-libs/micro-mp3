@@ -93,6 +93,21 @@ Replaced the manual multi-step bit-scan cascade in `pvmp3_normalize()` with
 tree followed by a switch statement to count leading zeros. The `__builtin_clz`
 intrinsic is equivalent and produces a native `CLZ` instruction on ARM and Xtensa.
 
+### `pvmp3_mpeg2_get_scale_data.cpp`
+
+Zero-initialize the `new_slen[4]` local at declaration. Both
+scalefac-compress decode branches use an `if / else-if` chain with no
+final `else`, so GCC's `-Wmaybe-uninitialized` flags the later
+`if (new_slen[i])` read. The unset paths cannot be reached: this
+function only runs on the MPEG-2/2.5 LSF path, where `scalefac_compress`
+is a 9-bit field (0-511), so the `scalefac_comp < 512` and
+`int_scalefac_comp <= 255` arms always run. The compiler cannot prove
+the bitstream bound, so it warns anyway. The `{0}` default silences the
+warning and is safe: a zero entry routes to the existing else branch,
+which writes zeros to the scale-factor buffers. Reported as a
+`-Werror=maybe-uninitialized` build failure on xtensa-esp32s3 GCC
+(issue #7).
+
 ## Removed Files
 
 - **`pvmp3_decoder.cpp` / `pvmp3_decoder.h`** -- depended on OSCL (Operating System
