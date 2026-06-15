@@ -453,12 +453,15 @@ static bool test_error_contract() {
         }
         CHECK(probed);
 
-        // Output buffer below the documented minimum is rejected, consuming nothing.
+        // Output buffer below the documented minimum is rejected, consuming
+        // nothing and zeroing both out-params.
         consumed = kPoison;
+        samples = kPoison;
         r = dec.decode(data.data() + off, data.size() - off, out_ptr,
                        micro_mp3::MP3_MIN_OUTPUT_BUFFER_BYTES - 1, consumed, samples);
         CHECK_EQ(r, micro_mp3::MP3_OUTPUT_BUFFER_TOO_SMALL);
         CHECK_EQ(consumed, 0);
+        CHECK_EQ(samples, 0);
 
         // Empty input with nothing buffered is the EOS signal: MP3_OK, no output.
         consumed = kPoison;
