@@ -60,4 +60,7 @@ if [ "$1" = "--fix" ]; then
 fi
 
 echo "Running clang-tidy..."
-$CLANG_TIDY -p "$BUILD_DIR" $FIX_FLAG $SOURCES
+# --warnings-as-errors='*' makes any finding return non-zero so the CI
+# "Static analysis" job fails (and blocks merge) instead of just logging
+# warnings while exiting 0. Keeps local runs consistent with CI.
+$CLANG_TIDY -p "$BUILD_DIR" --warnings-as-errors='*' $FIX_FLAG $SOURCES
