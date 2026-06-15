@@ -121,6 +121,21 @@ separate function (`pvmp3_stereo_proc.cpp`), which `pvmp3_framedecoder`
 only calls for `version_x == MPEG_1`; that path keeps its own hardcoded
 `36`, correct for MPEG-1's always-2-subband mixed blocks.
 
+### `pvmp3_equalizer.cpp`
+
+Fixed the band stride in the non-flat (preset) branch of `pvmp3_equalizer()`.
+Each outer iteration processes exactly two consecutive bands: the first inner
+loop handles `band`, then `pt_work_buff++` and the second inner loop handles
+`band+1`. The loop must therefore advance by 2, as the flat branch does. The
+non-flat branch instead stepped `band += 3`, so of the 18 bands it covered only
+`{0,1} {3,4} {6,7} {9,10} {12,13} {15,16}` and skipped bands 2, 5, 8, 11, 14,
+and 17. Those `6 * SUBBANDS_NUMBER = 192` of the 576 synthesis-buffer slots were
+never written and kept stale prior-frame data, producing glitchy output on every
+non-flat preset. Reachable through the wrapper's public `set_equalizer()` API for
+any preset other than `MP3_EQ_FLAT`. The write stays in bounds, so there is no
+out-of-bounds access; the symptom was audibly wrong output. Changed `band += 3`
+to `band += 2`. Found during code review.
+
 ### `pvmp3_seek_synch.cpp`
 
 Two fixes:
