@@ -68,6 +68,16 @@ void mp3_free(void* ptr) {
 #endif
 }
 
+// MP3 frame sync word: 11 bits set. The first byte is all ones and the top
+// three bits of the second byte are ones.
+constexpr uint8_t MP3_SYNC_BYTE0 = 0xFF;
+constexpr uint8_t MP3_SYNC_BYTE1_MASK = 0xE0;
+
+// True when two consecutive bytes form a candidate MP3 frame sync pair.
+constexpr bool is_sync_pair(uint8_t byte0, uint8_t byte1) {
+    return byte0 == MP3_SYNC_BYTE0 && (byte1 & MP3_SYNC_BYTE1_MASK) == MP3_SYNC_BYTE1_MASK;
+}
+
 }  // namespace
 
 // ============================================================================
@@ -404,8 +414,7 @@ Mp3FrameInfo Mp3Decoder::parse_mp3_frame_header(const uint8_t* data, size_t len)
     //   I = channel mode (00=stereo, 01=joint stereo, 10=dual channel, 11=mono)
 
     // Check 11-bit sync word: first 8 bits must be 0xFF, next 3 bits must be 0b111
-    // NOLINTNEXTLINE(readability-magic-numbers)
-    if (data[0] != 0xFF || (data[1] & 0xE0) != 0xE0) {
+    if (!is_sync_pair(data[0], data[1])) {
         info.frame_length = -1;
         return info;
     }
@@ -801,8 +810,7 @@ Mp3Result Mp3Decoder::decode_direct(tPVMP3DecoderExternal& ext, const uint8_t* i
     // byte-level scan for a candidate sync pair and let the next decode()
     // call re-probe at that position through the validated happy path.
     size_t skip = 1;  // offset 0 already failed; guarantee forward progress
-    // NOLINTNEXTLINE(readability-magic-numbers)
-    while (skip + 1 < input_len && !(input[skip] == 0xFF && (input[skip + 1] & 0xE0) == 0xE0)) {
+    while (skip + 1 < input_len && !is_sync_pair(input[skip], input[skip + 1])) {
         skip++;
     }
     // If no candidate was found in input[1..input_len-2], consume everything
@@ -810,7 +818,7 @@ Mp3Result Mp3Decoder::decode_direct(tPVMP3DecoderExternal& ext, const uint8_t* i
     // straddling the chunk boundary.
     if (skip + 1 >= input_len) {
         // NOLINTNEXTLINE(readability-magic-numbers)
-        if (input_len >= 2 && input[input_len - 1] == 0xFF) {
+        if (input_len >= 2 && input[input_len - 1] == MP3_SYNC_BYTE0) {
             skip = input_len - 1;
         } else {
             skip = (input_len > 0) ? input_len : 1;
@@ -856,10 +864,8 @@ Mp3Result Mp3Decoder::decode_buffered(tPVMP3DecoderExternal& ext, const uint8_t*
             // Scan forward in the already-buffered bytes for the next sync
             // candidate and shift it to the start.
             size_t shift = 1;
-            // NOLINTNEXTLINE(readability-magic-numbers)
             while (shift + 1 < this->input_buffer_fill_ &&
-                   !(this->input_buffer_[shift] == 0xFF &&
-                     (this->input_buffer_[shift + 1] & 0xE0) == 0xE0)) {
+                   !is_sync_pair(this->input_buffer_[shift], this->input_buffer_[shift + 1])) {
                 shift++;
             }
             if (shift >= this->input_buffer_fill_) {
