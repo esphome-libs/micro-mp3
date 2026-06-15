@@ -64,8 +64,9 @@ Two fixes:
    stream still has count1 bits (`usedBits < grBits`). The write stays within
    the struct on the current layout, but it is UB and fragile to field
    reordering. Tightened the guard to `i <= 576 - 4` so the quad only decodes
-   when it fits, matching the first-chance loop guard and leaving the existing
-   `(i-2) >= 576` cleanup unreachable. Found by code review.
+   when a full quad fits (the largest decode is `is[572..575]`). This made the
+   original post-decode `(i-2) >= 576` overflow-cleanup unreachable, so it was
+   removed. Found by code review.
 
 ### `pvmp3_dequantize_sample.cpp`
 
