@@ -134,8 +134,12 @@ void pvmp3_reorder(int32 xr[SUBBANDS_NUMBER*FILTERBANK_BANDS],
         if (gr_info->mixed_block_flag)
         {
             /* REORDERING FOR REST SWITCHED SHORT */
-            sfb = 3;  /* no reorder for low 2 subbands */
-            src_line = 36;
+            sfb = 3;  /* low long-block subbands are not reordered */
+            /*
+             * Short region starts at 3*s[3]: 36 lines for every config except
+             * MPEG2.5 @ 8 kHz, where s[3]=24 puts the boundary at 72.
+             */
+            src_line = mp3_sfBandIndex[sfreq].s[3] * 3;
         }
         else
         {  /* pure short */
@@ -143,6 +147,20 @@ void pvmp3_reorder(int32 xr[SUBBANDS_NUMBER*FILTERBANK_BANDS],
             src_line = 0;
         }
         int16 ct = src_line;
+
+        /*
+         * microMP3 FIX: if the granule decoded no short-region coefficients
+         * (used_freq_lines <= src_line), there is nothing to reorder. The
+         * loop below would otherwise read the stale tail of work_buf_int32[]
+         * (pvmp3_huffman_parsing() does not zero beyond used_freq_lines) and
+         * grow used_freq_lines to the scalefactor-band boundary, propagating
+         * previous-frame values downstream. Only reachable on malformed
+         * streams that flag a mixed block with an empty short region.
+         */
+        if (*used_freq_lines <= src_line)
+        {
+            return;
+        }
 
         for (; sfb < 13; sfb++)
         {

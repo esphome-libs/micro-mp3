@@ -250,8 +250,10 @@ void pvmp3_dequantize_sample(int32 is[SUBBANDS_NUMBER*FILTERBANK_BANDS],
                         cb_begin = mp3_sfBandIndex[sfreq].s[cb] * 3;
                     }
 
-                    if (ss < 2*FILTERBANK_BANDS)
-                    {   /*  1st 2 subbands of switched blocks */
+                    if (ss < mp3_sfBandIndex[sfreq].l[mixstart])
+                    {   /*  long-block region of mixed blocks: 2 subbands (36
+                         *  lines) for every config except MPEG2.5 @ 8 kHz,
+                         *  where l[mixstart]=l[6]=72 spans 4 subbands.        */
                         global_gain  = (gr_info->global_gain);
                         global_gain -= (1 + gr_info->scalefac_scale) *
                                        (scalefac->l[cb] + gr_info->preflag * pretab[cb]) << 1;
@@ -270,7 +272,7 @@ void pvmp3_dequantize_sample(int32 is[SUBBANDS_NUMBER*FILTERBANK_BANDS],
             }   /*  end-if ( ss == next_cb_boundary) */
 
             /* Do long/short dependent scaling operations. */
-            if ((gr_info->mixed_block_flag == 0) || (gr_info->mixed_block_flag && (ss >= 2*FILTERBANK_BANDS)))
+            if ((gr_info->mixed_block_flag == 0) || (gr_info->mixed_block_flag && (ss >= mp3_sfBandIndex[sfreq].l[mixstart])))
             {
                 int32 temp2 = fxp_mul32_Q32((ss - cb_begin) << 16, mp3_shortwindBandWidths[sfreq][cb_width]);
                 temp2 = (temp2 + 1) >> 15;

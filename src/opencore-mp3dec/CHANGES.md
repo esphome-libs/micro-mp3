@@ -77,6 +77,50 @@ fixed-point product of side-info values; in spec-compliant streams it is
 always in range, but adversarial input drove it past 2 and caused
 out-of-bounds reads. Found by UBSan fuzzing.
 
+Also fixed the mixed-block long/short boundary. The scaling split was
+hardcoded to `2*FILTERBANK_BANDS` (= 36 lines = 2 subbands), which is only
+correct when `l[mixstart]` equals 36. For **MPEG-2.5 @ 8 kHz**
+mixed blocks `l[mixstart] == l[6] == 72` (4 long subbands), so lines 36..71
+are part of the long region but were being dequantized with short-block
+scaling against stale sub-window state. The decoder already special-cases
+this config in `pvmp3_imdct_synth` (`mixedBlocksLongBlocks = 4`),
+`pvmp3_alias_reduction` (`sblim = 3`), and the LSF scale-factor parser
+(6 long sfbs), so dequant was inconsistent with the rest of the pipeline.
+Both occurrences of `2*FILTERBANK_BANDS` now use
+`mp3_sfBandIndex[sfreq].l[mixstart]`, which still evaluates to 36 for every
+other rate (no behavior change) and to 72 for MPEG-2.5 @ 8 kHz. No
+out-of-bounds; the symptom was audibly wrong output for that rare config.
+
+### `pvmp3_reorder.cpp`
+
+Fixed the same mixed-block boundary in the short-block reorder. `src_line`
+(and the matching write cursor `ct`) was hardcoded to 36, the start of the
+short region. For MPEG-2.5 @ 8 kHz the short region starts at `3*s[3] == 72`,
+so the reorder was de-interleaving from the middle of the long region.
+Replaced with `mp3_sfBandIndex[sfreq].s[3] * 3` (== 36 for all other configs).
+
+Also added a guard for malformed streams: if a mixed block decoded no
+short-region coefficients (`used_freq_lines <= src_line`), the reorder now
+returns early. Otherwise the loop would read the stale tail of
+`work_buf_int32[]` (`pvmp3_huffman_parsing()` does not zero beyond
+`used_freq_lines`) and grow `used_freq_lines` to the scalefactor-band
+boundary, propagating previous-frame values into the IMDCT. Only reachable
+on bitstreams that flag a mixed block with an empty short region; valid
+encoders never do this.
+
+### `pvmp3_mpeg2_stereo_proc.cpp`
+
+Fixed the same mixed-block boundary in the MPEG-2/2.5 stereo path. The
+branch that selects "intensity bound inside vs outside the long blocks" was
+keyed on the hardcoded `sb < 36`; both branches already use `l[6]`
+internally for the long region, so only the selection was wrong. For
+MPEG-2.5 @ 8 kHz an intensity boundary in lines 36..71 took the wrong branch.
+Changed to `sb < mp3_sfBandIndex[sfreq].l[6]` (== 36 for all other LSF
+configs). The MPEG-1 stereo path is unaffected because it lives in a
+separate function (`pvmp3_stereo_proc.cpp`), which `pvmp3_framedecoder`
+only calls for `version_x == MPEG_1`; that path keeps its own hardcoded
+`36`, correct for MPEG-1's always-2-subband mixed blocks.
+
 ### `pvmp3_seek_synch.cpp`
 
 Two fixes:
