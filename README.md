@@ -12,6 +12,7 @@ Streaming MP3 decoder for embedded devices. Fixed-point decoder forked from Open
 - **Streaming decode**: Decodes directly from the caller's buffer when a complete MP3 frame is available, avoiding an intermediate copy. Falls back to internal buffering only when frames span chunk boundaries.
 - **MP3 frame synchronization**: Built-in frame header parsing handles sync-word detection and frame-boundary alignment. No external demuxer needed.
 - **ID3v2 tag skipping**: Automatically detects and skips ID3v2 metadata tags, even when they span chunk boundaries.
+- **Gapless trimming**: Automatically removes encoder delay and end padding from files with a Xing/Info/LAME header, so output length matches the source audio.
 - **PSRAM-aware allocation**: Configurable memory placement with automatic fallback.
 - **MPEG version support**: MPEG 1 (44.1/48/32kHz), MPEG 2 (22.05/24/16kHz), and MPEG 2.5 (11.025/12/8kHz) Layer III
 - **VBR compatible**: Bitrate reported per-frame from decoded header data
