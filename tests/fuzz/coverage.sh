@@ -97,9 +97,13 @@ LLVM_PROFILE_FILE="cov.profraw" "./$binary" -runs=0 "$corpus" >/dev/null 2>&1
 
 "$profdata" merge -sparse cov.profraw -o cov.profdata
 
-# Restrict the report to the micro-mp3 wrapper. The OpenCore decoder fork and
-# the harness itself aren't what we're auditing here.
-ignore_re='(src/opencore-mp3dec|tests/fuzz)'
+# Report on both the wrapper (src/mp3_decoder.cpp) and the OpenCore decoder fork
+# (src/opencore-mp3dec/): the decoder is the real memory-safety target the fuzzer
+# is hardening, and its fix history lives in src/opencore-mp3dec/CHANGES.md, so it
+# stays in the report. Only the harness itself is excluded. Override with
+# IGNORE_RE to narrow the report, e.g. IGNORE_RE='(opencore-mp3dec|tests/fuzz)'
+# to look at the wrapper alone.
+ignore_re="${IGNORE_RE:-tests/fuzz}"
 
 echo
 "$llvmcov" report "$binary" \

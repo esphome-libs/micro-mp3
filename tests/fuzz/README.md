@@ -155,7 +155,8 @@ matches the host CTest suite in `tests/CMakeLists.txt`.
 
 ## Corpus coverage
 
-To see which functions in `src/mp3_decoder.cpp` the saved corpus exercises:
+To see which functions the saved corpus exercises across both the wrapper
+(`src/mp3_decoder.cpp`) and the OpenCore decoder fork (`src/opencore-mp3dec/`):
 
 ```sh
 ./coverage.sh           # per-function report on stdout
@@ -164,9 +165,13 @@ To see which functions in `src/mp3_decoder.cpp` the saved corpus exercises:
 
 The script builds a separate `build-cov/` with clang source-based coverage
 instrumentation, replays `corpus_mp3/` once via libFuzzer's `-runs=0` mode, and
-renders the report with `llvm-cov`. The OpenCore decoder fork and the harness
-itself are excluded. Functions at 0% are codepaths the corpus isn't reaching,
-candidates for new seeds or dict entries.
+renders the report with `llvm-cov`. The OpenCore decoder is the real
+memory-safety target here, so it stays in the report; only the harness itself is
+excluded. Functions at 0% are codepaths the corpus isn't reaching, candidates
+for new seeds or dict entries. Expect the decoder to never reach 100%: the fork
+carries rate/version/block-type and layer I/II paths that valid MP3 seeds do not
+all hit. To narrow the report to the wrapper alone, set
+`IGNORE_RE='(opencore-mp3dec|tests/fuzz)'`.
 
 ## When a crash is found
 
