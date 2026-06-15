@@ -122,5 +122,20 @@ vgcore.*
 *.gcda
 *.gcno
 *.gcov
+*.profraw
+*.profdata
 coverage/
 htmlcov/
+
+# Fuzzer outputs (harness, scripts, dict, and README stay tracked)
+tests/fuzz/build-libfuzzer/
+tests/fuzz/build-standalone/
+tests/fuzz/build-cov/
+tests/fuzz/corpus_mp3/
+tests/fuzz/corpus_run/
+tests/fuzz/cov-html/
+tests/fuzz/seeds_mp3/
+crash-*
+leak-*
+timeout-*
+oom-*
