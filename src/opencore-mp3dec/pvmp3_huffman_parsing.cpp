@@ -307,18 +307,23 @@ int32 pvmp3_huffman_parsing(int32 is[SUBBANDS_NUMBER*FILTERBANK_BANDS],
         i += 4;
     }
 
+    /*
+     * microMP3 FIX: a count1 quad writes four lines (is[i..i+3]), so the
+     * second-chance decode must only run when a full quad fits in the
+     * 576-entry is[] buffer. The original guard (i < 576) allowed i == 574,
+     * writing is[576]/is[577] one int32 past work_buf_int32[] into the
+     * adjacent circ_buffer. i == 574 is reachable when big_values leaves i at
+     * an even non-multiple-of-4 offset while a malformed stream still has
+     * count1 bits. The tightened guard (i <= 576 - 4) requires a full quad to
+     * fit, so the largest decode is is[572..575]. The original post-decode
+     * "(i-2) >= 576" cleanup that backed out a partial overflow is now
+     * unreachable (i tops out at 576 after the increment), so it is removed.
+     */
     if ((pMainData->usedBits < grBits) &&
-            (i < FILTERBANK_BANDS*SUBBANDS_NUMBER))
+            (i <= FILTERBANK_BANDS*SUBBANDS_NUMBER - 4))
     {
         pvmp3_huffman_quad_decoding(h, &is[i], pMainData);
         i += 4;
-
-        if ((i - 2) >= FILTERBANK_BANDS*SUBBANDS_NUMBER)
-        {
-            i -= 2;
-            is[i] = 0;
-            is[(i+1)] = 0;
-        }
     }
 
     if (pMainData->usedBits > grBits)
