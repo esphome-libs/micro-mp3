@@ -102,6 +102,16 @@ Two fixes:
    independently before any header is parsed. Found during code review
    of the libFuzzer-driven fix series.
 
+3. Fixed the byte-alignment typo in `pvmp3_header_sync()`. The upstream
+   "byte aligment" step read `usedBits = (usedBits + 7) & 8`, which keeps
+   only bit 3 and resets `usedBits` to 0 or 8 instead of rounding up to the
+   next multiple of 8 (a typo for `& ~7`). The effect is a logic error,
+   rewinding the read cursor toward the buffer start, not a memory-safety
+   issue: `& 8` can only yield 0 or 8, both in bounds. The scan is dormant
+   in the wrapper, which pre-validates sync at offset 0 before pvmp3 sees
+   the buffer, and the only other caller `pvmp3_frame_synch` is uncalled.
+   Corrected to `& ~7u`. Found during code review.
+
 ### `pvmp3_normalize.cpp`
 
 Replaced the manual multi-step bit-scan cascade in `pvmp3_normalize()` with
