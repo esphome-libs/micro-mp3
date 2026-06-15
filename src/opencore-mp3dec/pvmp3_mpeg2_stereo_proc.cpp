@@ -288,7 +288,9 @@ void pvmp3_mpeg2_stereo_proc(int32 xr[SUBBANDS_NUMBER*FILTERBANK_BANDS],
                 }   /* now sb is the number of highest line with value != 0      */
                 /* can be between -1 (all lines zero) and 575 (no line zero) */
 
-                if (sb < 36)    /*  was (sb <= 36)  */
+                if (sb < mp3_sfBandIndex[sfreq].l[6])  /* long-block region end:
+                                                          36 lines, or 72 for
+                                                          MPEG2.5 @ 8 kHz */
                 {
                     /*
                      *  mixed blocks processing: intensity bound inside long blocks
@@ -366,7 +368,7 @@ void pvmp3_mpeg2_stereo_proc(int32 xr[SUBBANDS_NUMBER*FILTERBANK_BANDS],
                         }
                     } /* for (j = 0; j < 3; j++) */
                 }
-                else  /*  else then (sb >= 36)  */
+                else  /*  else then (sb >= l[6])  */
                 {
                     /*
                      *   mixed blocks processing: intensity bound outside long blocks

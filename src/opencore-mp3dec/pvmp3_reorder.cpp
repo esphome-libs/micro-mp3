@@ -134,8 +134,12 @@ void pvmp3_reorder(int32 xr[SUBBANDS_NUMBER*FILTERBANK_BANDS],
         if (gr_info->mixed_block_flag)
         {
             /* REORDERING FOR REST SWITCHED SHORT */
-            sfb = 3;  /* no reorder for low 2 subbands */
-            src_line = 36;
+            sfb = 3;  /* low long-block subbands are not reordered */
+            /*
+             * Short region starts at 3*s[3]: 36 lines for every config except
+             * MPEG2.5 @ 8 kHz, where s[3]=24 puts the boundary at 72.
+             */
+            src_line = mp3_sfBandIndex[sfreq].s[3] * 3;
         }
         else
         {  /* pure short */
