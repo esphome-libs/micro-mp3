@@ -25,8 +25,6 @@ if ! ffmpeg -hide_banner -encoders 2>/dev/null | grep -q libmp3lame; then
 fi
 
 mkdir -p data
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
 
 # ID3 tags are stripped from every fixture (-id3v2_version 0 disables the
 # ID3v2 tag, -write_id3v1 0 the ID3v1 trailer) so each file starts at the
