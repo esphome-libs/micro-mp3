@@ -8,6 +8,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Option to enable sanitizers for debugging
 option(ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 
+# Treat warnings as errors (also picked up by the micro_mp3 library build below)
+option(ENABLE_WERROR "Treat warnings as errors" OFF)
+
 # Configure sanitizers if enabled
 if(ENABLE_SANITIZERS)
     message(STATUS "Building with AddressSanitizer and UndefinedBehaviorSanitizer")
@@ -30,6 +33,16 @@ add_executable(mp3_to_wav
 # Link against micro_mp3 library
 target_link_libraries(mp3_to_wav PRIVATE
     micro_mp3
+)
+
+# Warning flags for the mp3_to_wav executable itself (the library's own flags
+# are set in cmake/host.cmake). ENABLE_WERROR is defined above.
+target_compile_options(mp3_to_wav PRIVATE
+    -Wall
+    -Wextra
+    -Wshadow
+    -Wimplicit-fallthrough
+    $<$<BOOL:${ENABLE_WERROR}>:-Werror>
 )
 
 # Install target
