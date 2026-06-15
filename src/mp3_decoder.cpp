@@ -244,12 +244,16 @@ void Mp3Decoder::reset() {
     this->input_buffer_fill_ = 0;
     this->expected_frame_length_ = 0;
     this->id3_skip_remaining_ = 0;
+    this->start_skip_remaining_ = 0;
+    this->output_samples_remaining_ = 0;
     this->sample_rate_ = 0;
     this->bitrate_ = 0;
     this->output_channels_ = 0;
     this->version_ = MP3_MPEG1;
+    this->end_trim_active_ = false;
     this->initialized_ = false;
     this->probe_done_ = false;
+    this->vbr_header_checked_ = false;
     this->equalizer_ = MP3_EQ_FLAT;
 }
 
@@ -287,12 +291,16 @@ Mp3Result Mp3Decoder::initialize() {
 
     this->input_buffer_fill_ = 0;
     this->id3_skip_remaining_ = 0;
+    this->start_skip_remaining_ = 0;
+    this->output_samples_remaining_ = 0;
     this->initialized_ = true;
     this->probe_done_ = false;
     this->sample_rate_ = 0;
     this->bitrate_ = 0;
     this->output_channels_ = 0;
     this->version_ = MP3_MPEG1;
+    this->end_trim_active_ = false;
+    this->vbr_header_checked_ = false;
 
     return MP3_OK;
 }
@@ -557,6 +565,149 @@ size_t Mp3Decoder::parse_id3v2_tag_size(const uint8_t* data, size_t len) {
     return total;
 }
 
+bool Mp3Decoder::parse_vbr_header(const uint8_t* frame, size_t frame_len, Mp3Version version,
+                                  uint8_t channels, uint16_t& encoder_delay,
+                                  uint16_t& encoder_padding, uint32_t& frame_count) {
+    encoder_delay = 0;
+    encoder_padding = 0;
+    frame_count = 0;
+
+    // A valid frame is at least the 4-byte header; guards the protection-bit read
+    // NOLINTNEXTLINE(readability-magic-numbers)
+    if (frame_len < 4) {
+        return false;
+    }
+
+    // The Xing/Info magic sits after the frame header (4 bytes), an optional
+    // 2-byte CRC, and the side information (size depends on version and channel
+    // mode). The CRC is present when the header protection bit (byte 1, bit 0)
+    // is clear, matching how pvmp3 itself consumes it before the side info.
+    // NOLINTNEXTLINE(readability-magic-numbers)
+    const bool mono = (channels == 1);
+    size_t side_info_size = 0;
+    if (version == MP3_MPEG1) {
+        side_info_size = mono ? 17 : 32;  // NOLINT(readability-magic-numbers)
+    } else {
+        side_info_size = mono ? 9 : 17;  // NOLINT(readability-magic-numbers)
+    }
+
+    // NOLINTNEXTLINE(readability-magic-numbers)
+    const size_t crc_size = ((frame[1] & 0x01) == 0) ? 2 : 0;
+    // NOLINTNEXTLINE(readability-magic-numbers)
+    const size_t magic_off = 4 + crc_size + side_info_size;
+
+    // Need the 4-byte magic plus the 4-byte flags field to classify the frame
+    // NOLINTNEXTLINE(readability-magic-numbers)
+    if (frame_len < magic_off + 8) {
+        return false;
+    }
+
+    const uint8_t* magic = frame + magic_off;
+    const bool is_xing = (magic[0] == 'X' && magic[1] == 'i' && magic[2] == 'n' && magic[3] == 'g');
+    const bool is_info = (magic[0] == 'I' && magic[1] == 'n' && magic[2] == 'f' && magic[3] == 'o');
+    if (!is_xing && !is_info) {
+        return false;
+    }
+
+    // This is a header (non-audio) frame. Walk past the optional Xing fields to
+    // reach the LAME extension, which carries the encoder delay/padding.
+    // NOLINTNEXTLINE(readability-magic-numbers)
+    const uint32_t flags = (static_cast<uint32_t>(magic[4]) << 24) |
+                           (static_cast<uint32_t>(magic[5]) << 16) |
+                           (static_cast<uint32_t>(magic[6]) << 8) |
+                           static_cast<uint32_t>(magic[7]);  // NOLINT(readability-magic-numbers)
+    // NOLINTNEXTLINE(readability-magic-numbers)
+    size_t pos = magic_off + 8;
+    // NOLINTNEXTLINE(readability-magic-numbers)
+    if (flags & 0x0001) {
+        // Frame count (excludes this header frame). Used to derive the total
+        // audio length for end trimming. A truncated field leaves frame_count 0
+        // (end trim stays off); pos still advances by the field's fixed 4-byte
+        // width so later offsets stay correct.
+        // NOLINTNEXTLINE(readability-magic-numbers)
+        if (pos + 4 <= frame_len) {
+            frame_count =
+                (static_cast<uint32_t>(frame[pos]) << 24) |
+                (static_cast<uint32_t>(frame[pos + 1]) << 16) |
+                (static_cast<uint32_t>(frame[pos + 2]) << 8) |
+                static_cast<uint32_t>(frame[pos + 3]);  // NOLINT(readability-magic-numbers)
+        }
+        pos += 4;  // NOLINT(readability-magic-numbers)
+    }
+    // NOLINTNEXTLINE(readability-magic-numbers)
+    if (flags & 0x0002) {
+        pos += 4;  // bytes field  // NOLINT(readability-magic-numbers)
+    }
+    // NOLINTNEXTLINE(readability-magic-numbers)
+    if (flags & 0x0004) {
+        pos += 100;  // TOC  // NOLINT(readability-magic-numbers)
+    }
+    // NOLINTNEXTLINE(readability-magic-numbers)
+    if (flags & 0x0008) {
+        pos += 4;  // quality indicator  // NOLINT(readability-magic-numbers)
+    }
+
+    // LAME-tag extension layout (also written by Lavc and other encoders that
+    // do not use the literal "LAME" version magic): a 9-byte encoder version
+    // string followed by fixed fields, with the 3-byte encoder delay/padding
+    // field at offset 21 (12 bits delay, 12 bits padding). The Xing/Info frame
+    // is a dedicated reserved metadata frame, so this region is either the real
+    // delay/padding or zero-filled. Read it unconditionally (matching ffmpeg)
+    // rather than gating on a "LAME" magic that non-LAME encoders omit. A
+    // truncated frame that cannot hold the field leaves delay/padding at 0; the
+    // frame is still a header frame and must be skipped.
+    // NOLINTNEXTLINE(readability-magic-numbers)
+    if (pos + 24 <= frame_len) {
+        // NOLINTNEXTLINE(readability-magic-numbers)
+        const uint32_t v =
+            (static_cast<uint32_t>(frame[pos + 21]) << 16) |
+            (static_cast<uint32_t>(frame[pos + 22]) << 8) |
+            static_cast<uint32_t>(frame[pos + 23]);  // NOLINT(readability-magic-numbers)
+        // NOLINTNEXTLINE(readability-magic-numbers)
+        encoder_delay = static_cast<uint16_t>(v >> 12);
+        // NOLINTNEXTLINE(readability-magic-numbers)
+        encoder_padding = static_cast<uint16_t>(v & 0xFFF);
+    }
+
+    return true;
+}
+
+bool Mp3Decoder::record_vbr_header_frame(const uint8_t* frame, size_t frame_len) {
+    uint16_t enc_delay = 0;
+    uint16_t enc_padding = 0;
+    uint32_t frame_count = 0;
+    if (!Mp3Decoder::parse_vbr_header(frame, frame_len, this->version_, this->output_channels_,
+                                      enc_delay, enc_padding, frame_count)) {
+        return false;
+    }
+
+    // Inherent Layer III decoder delay in samples per channel (528 + 1): the
+    // hybrid IMDCT + polyphase filterbank emits this many warm-up samples before
+    // the first real audio sample. Drop the encoder's priming samples plus this
+    // delay from the start. When no LAME extension was present enc_delay is 0, so
+    // we still strip the decoder delay (the only component we can know).
+    // NOLINTNEXTLINE(readability-magic-numbers)
+    constexpr size_t DECODER_DELAY = 529;
+    this->start_skip_remaining_ = static_cast<size_t>(enc_delay) + DECODER_DELAY;
+
+    // End trim: the Xing frame count gives the exact decodable length up front,
+    // so we can cap emitted samples without an explicit end-of-stream signal.
+    //   total audio = frame_count * samples_per_frame - encoder_delay - padding
+    // frame_count excludes this header frame. Needs the count field (flag bit 0);
+    // when absent (frame_count == 0) or degenerate, the end is left untrimmed.
+    if (frame_count > 0) {
+        // NOLINTNEXTLINE(readability-magic-numbers)
+        size_t spf = (this->version_ == MP3_MPEG1) ? 1152 : 576;
+        size_t decoded = static_cast<size_t>(frame_count) * spf;
+        size_t trim = static_cast<size_t>(enc_delay) + static_cast<size_t>(enc_padding);
+        if (decoded > trim) {
+            this->output_samples_remaining_ = decoded - trim;
+            this->end_trim_active_ = true;
+        }
+    }
+    return true;
+}
+
 void Mp3Decoder::setup_decode_ext(tPVMP3DecoderExternal& ext, uint8_t* output) {
     std::memset(&ext, 0, sizeof(ext));
 
@@ -589,6 +740,20 @@ Mp3Result Mp3Decoder::decode_direct(tPVMP3DecoderExternal& ext, const uint8_t* i
         size_t frame_size = static_cast<size_t>(mp3_len);
 
         if (input_len >= frame_size) {
+            // The first frame may be a Xing/Info gapless header (silent payload,
+            // not audio). Detect it once, record the trim metadata, and skip it
+            // without decoding. Feeding it to pvmp3 is unnecessary and would
+            // emit a frame of silence. The filterbank stays cold either way, so
+            // the first real frame still carries the standard decoder delay that
+            // the start trim removes.
+            if (!this->vbr_header_checked_) {
+                this->vbr_header_checked_ = true;
+                if (this->record_vbr_header_frame(input, frame_size)) {
+                    bytes_consumed = frame_size;
+                    return MP3_OK;  // frame_decoded stays false -> no PCM emitted
+                }
+            }
+
             // Complete frame available -- zero-copy decode.
             // Bound OpenCore's reads to exactly this frame, preventing
             // it from reading past the frame into unrelated data.
@@ -727,6 +892,25 @@ Mp3Result Mp3Decoder::decode_buffered(tPVMP3DecoderExternal& ext, const uint8_t*
         }
     }
 
+    // First complete frame may be a Xing/Info gapless header: detect, record
+    // the trim metadata, and skip it without decoding (mirrors decode_direct).
+    if (!this->vbr_header_checked_) {
+        this->vbr_header_checked_ = true;
+        if (this->record_vbr_header_frame(this->input_buffer_, this->expected_frame_length_)) {
+            // Compact the internal buffer past the skipped header frame.
+            size_t used = this->expected_frame_length_;
+            size_t remaining = this->input_buffer_fill_ - used;
+            if (remaining > 0) {
+                memmove(this->input_buffer_, this->input_buffer_ + used, remaining);
+            }
+            this->input_buffer_fill_ = remaining;
+            this->expected_frame_length_ = 0;
+            // bytes_consumed already reflects the bytes taken from `input` this
+            // call; frame_decoded stays false so no PCM is emitted.
+            return MP3_OK;
+        }
+    }
+
     ext.pInputBuffer = this->input_buffer_;
     ext.inputBufferCurrentLength = static_cast<int32>(this->input_buffer_fill_);
     ext.inputBufferMaxLength = static_cast<int32>(MP3_INPUT_BUFFER_SIZE);
@@ -782,11 +966,38 @@ void Mp3Decoder::finalize_decode(tPVMP3DecoderExternal& ext, size_t& samples_dec
     this->version_ = static_cast<Mp3Version>(ext.version);
 
     // Per-channel sample count
+    size_t per_channel = 0;
     if (num_channels > 0 && total_samples > 0) {
-        samples_decoded = total_samples / num_channels;
+        per_channel = total_samples / num_channels;
     } else {
-        samples_decoded = total_samples;
+        per_channel = total_samples;
     }
+
+    // Gapless start trim: drop leading samples (encoder delay + decoder delay)
+    // by shifting the remainder of this frame to the front of the output buffer.
+    // A whole frame may fall entirely within the skip region, yielding 0 samples.
+    if (this->start_skip_remaining_ > 0 && per_channel > 0 && num_channels > 0) {
+        size_t skip = std::min(this->start_skip_remaining_, per_channel);
+        size_t kept = per_channel - skip;
+        if (kept > 0) {
+            int16_t* out = reinterpret_cast<int16_t*>(ext.pOutputBuffer);
+            std::memmove(out, out + (skip * num_channels), kept * num_channels * sizeof(int16_t));
+        }
+        this->start_skip_remaining_ -= skip;
+        per_channel = kept;
+    }
+
+    // Gapless end trim: cap total emitted samples at the length derived from the
+    // Xing frame count, dropping the trailing encoder padding. Active only when
+    // the frame count armed it; otherwise the end is left untouched.
+    if (this->end_trim_active_) {
+        if (per_channel > this->output_samples_remaining_) {
+            per_channel = this->output_samples_remaining_;
+        }
+        this->output_samples_remaining_ -= per_channel;
+    }
+
+    samples_decoded = per_channel;
 }
 
 }  // namespace micro_mp3

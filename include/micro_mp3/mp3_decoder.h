@@ -112,6 +112,7 @@ struct Mp3FrameInfo {
  * - Streaming decode with user-managed buffers
  * - Internal input buffering for frame accumulation
  * - MPEG1, MPEG2, and MPEG2.5 Layer III
+ * - Gapless trimming (Xing/Info/LAME encoder delay and end padding)
  *
  * @warning Thread Safety: This class is NOT thread-safe. Each decoder instance
  *          must be accessed from only one thread at a time.
@@ -232,7 +233,7 @@ public:
     ///                       In the success case, this equals the bytes used
     ///                       for one frame. When buffering partial frame data,
     ///                       this equals the bytes copied into the internal buffer.
-    /// @param[out] samples_decoded Number of PCM samples decoded (per channel)
+    /// @param[out] samples_decoded Number of valid PCM samples decoded (per channel)
     ///
     /// @return Mp3Result result code
     ///         - 0 (MP3_OK): Success (check samples_decoded)
@@ -390,6 +391,41 @@ private:
     ///         or 0 if not a valid ID3v2 header (requires at least 10 bytes)
     static size_t parse_id3v2_tag_size(const uint8_t* data, size_t len);
 
+    /// @brief Detect a Xing/Info VBR header frame and extract gapless metadata
+    ///
+    /// The first frame of a LAME/Xing/Fraunhofer-encoded stream is an
+    /// informational frame (silent audio payload) carrying the "Xing" or "Info"
+    /// magic after the side information. When a LAME extension follows, it
+    /// stores the encoder delay and padding. This frame must not be emitted as
+    /// audio.
+    ///
+    /// @param frame         Pointer to a complete frame (header + body)
+    /// @param frame_len     Length of the frame in bytes
+    /// @param version       MPEG version (determines side-info size)
+    /// @param channels      Channel count (1 = mono, determines side-info size)
+    /// @param[out] encoder_delay   Encoder delay from the LAME tag (0 if absent)
+    /// @param[out] encoder_padding Encoder padding from the LAME tag (0 if absent)
+    /// @param[out] frame_count     Xing/Info frame count, excluding this header
+    ///                             frame (0 if the count field is absent)
+    /// @return true if the frame is a Xing/Info header frame (and must be
+    ///         skipped); false if it is an ordinary audio frame
+    static bool parse_vbr_header(const uint8_t* frame, size_t frame_len, Mp3Version version,
+                                 uint8_t channels, uint16_t& encoder_delay,
+                                 uint16_t& encoder_padding, uint32_t& frame_count);
+
+    /// @brief Classify a complete frame and, if it is a Xing/Info header frame,
+    ///        arm the gapless start and end trim state
+    ///
+    /// On a header frame, primes start_skip_remaining_ with the encoder delay
+    /// plus the fixed decoder delay, and (when the Xing frame count is present)
+    /// arms end trimming via output_samples_remaining_. The caller is
+    /// responsible for consuming the frame's bytes and emitting no PCM.
+    ///
+    /// @param frame     Pointer to a complete frame (header + body)
+    /// @param frame_len Length of the frame in bytes
+    /// @return true if the frame was a Xing/Info header frame (skip it)
+    bool record_vbr_header_frame(const uint8_t* frame, size_t frame_len);
+
     /// @brief Set up the OpenCore ext struct with common fields for decoding
     void setup_decode_ext(::tPVMP3DecoderExternal& ext, uint8_t* output);
 
@@ -416,16 +452,20 @@ private:
     size_t expected_frame_length_{0};  // MP3 frame length from parsed header, 0 = unknown
     size_t id3_skip_remaining_{0};  // Remaining bytes to skip for an ID3v2 tag (0 = no active skip)
     size_t input_buffer_fill_{0};   // Number of valid bytes in the internal input buffer
+    size_t output_samples_remaining_{0};  // Per-channel output samples still allowed (gapless end)
+    size_t start_skip_remaining_{0};      // Leading PCM samples to drop at start (gapless)
 
     // 32-bit fields
     uint32_t bitrate_{0};      // Stream bitrate (set after first successful decode)
     uint32_t sample_rate_{0};  // Stream sample rate (set after first successful decode)
 
     // 8-bit fields
+    bool end_trim_active_{false};          // True when the Xing frame count armed end trimming
     Mp3Equalizer equalizer_{MP3_EQ_FLAT};  // Equalizer preset (applied per-frame during decode)
-    bool initialized_{false};
-    uint8_t output_channels_{0};
-    bool probe_done_{false};  // True after first frame header parsed (probe complete)
+    bool initialized_{false};              // True after decoder memory is allocated and set up
+    uint8_t output_channels_{0};      // Decoded channel count (1 = mono, 2 = stereo), 0 = unknown
+    bool probe_done_{false};          // True after first frame header parsed (probe complete)
+    bool vbr_header_checked_{false};  // Set once the first frame was checked for a Xing/Info header
     Mp3Version version_{MP3_MPEG1};
 };
 
