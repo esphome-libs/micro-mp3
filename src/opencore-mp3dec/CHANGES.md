@@ -99,6 +99,15 @@ short region. For MPEG-2.5 @ 8 kHz the short region starts at `3*s[3] == 72`,
 so the reorder was de-interleaving from the middle of the long region.
 Replaced with `mp3_sfBandIndex[sfreq].s[3] * 3` (== 36 for all other configs).
 
+Also added a guard for malformed streams: if a mixed block decoded no
+short-region coefficients (`used_freq_lines <= src_line`), the reorder now
+returns early. Otherwise the loop would read the stale tail of
+`work_buf_int32[]` (`pvmp3_huffman_parsing()` does not zero beyond
+`used_freq_lines`) and grow `used_freq_lines` to the scalefactor-band
+boundary, propagating previous-frame values into the IMDCT. Only reachable
+on bitstreams that flag a mixed block with an empty short region; valid
+encoders never do this.
+
 ### `pvmp3_mpeg2_stereo_proc.cpp`
 
 Fixed the same mixed-block boundary in the MPEG-2/2.5 stereo path. The
