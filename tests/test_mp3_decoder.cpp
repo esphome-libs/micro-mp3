@@ -433,6 +433,7 @@ static bool test_error_contract() {
         Mp3Result r = dec.decode(data.data(), data.size(), nullptr, out_size, consumed, samples);
         CHECK_EQ(r, micro_mp3::MP3_INPUT_INVALID);
         CHECK_EQ(consumed, 0);
+        CHECK_EQ(samples, 0);
     }
 
     // Drive one decoder past the header probe, then exercise the post-probe
