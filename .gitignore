@@ -58,6 +58,10 @@ log/
 *.pcm
 test_output/
 
+# ...but the checked-in unit-test fixtures are tracked (see
+# tests/generate_test_data.sh for how they are produced).
+!tests/data/*.mp3
+
 # Debug symbols
 *.dSYM/
 *.pdb
