@@ -369,7 +369,7 @@ void pvmp3_equalizer(int32 *circ_buffer,
         const int32 *pt_equalizer = equalizerTbl[equalizerType&7];
 
 
-        for (int32 band = 0; band < FILTERBANK_BANDS; band += 3)
+        for (int32 band = 0; band < FILTERBANK_BANDS; band += 2)
         {
             int32 *inData = &circ_buffer[544 - (band<<5)];
 
