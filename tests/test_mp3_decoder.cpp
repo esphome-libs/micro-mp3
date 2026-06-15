@@ -177,7 +177,15 @@ static DecodeOutput decode_stream(Mp3Decoder& dec, const uint8_t* data, size_t l
 
         if (consumed == 0 && samples == 0) {
             if (off >= len) {
-                return out;  // Input exhausted: "input empty" is the EOS signal
+                // Clean end of stream is signaled by MP3_OK on empty input.
+                // Any other result here (notably MP3_NEED_MORE_DATA) means the
+                // decoder still has a partial frame buffered that the exhausted
+                // input can't complete, i.e. a truncated stream.
+                if (result != micro_mp3::MP3_OK) {
+                    out.errored = true;
+                    out.error = result;
+                }
+                return out;
             }
             window += chunk;  // No progress on a partial window: offer more input
         } else {
