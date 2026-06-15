@@ -292,8 +292,13 @@ ERROR_CODE pvmp3_header_sync(tmp3Bits  *inputStream)
     uint16 val;
     uint32 availableBits = (inputStream->inputBufferCurrentLength << 3); // in bits
 
-    // byte aligment
-    inputStream->usedBits = (inputStream->usedBits + 7) & 8;
+    // microMP3 FIX: byte-align usedBits by rounding up to the next multiple
+    // of 8. The upstream "& 8" keeps only bit 3, resetting usedBits to 0 or 8
+    // instead of aligning (a typo for "& ~7"). The effect is a logic error
+    // (the read cursor rewinds toward the buffer start), not an out-of-bounds
+    // read. The scan is also unreachable in the wrapper, which pre-validates
+    // sync at offset 0 before pvmp3 sees the buffer. Corrected to "& ~7u".
+    inputStream->usedBits = (inputStream->usedBits + 7) & ~7u;
 
     val = (uint16)getUpTo17bits(inputStream, SYNC_WORD_LNGTH);
 
