@@ -605,11 +605,11 @@ Mp3Result Mp3Decoder::decode_direct(tPVMP3DecoderExternal& ext, const uint8_t* i
                 return MP3_OK;
             }
             if (status == NO_ENOUGH_MAIN_DATA_ERROR) {
-                // We handed pvmp3 a full frame (input_len >= frame_size) bounded
-                // to exactly frame_size, computed from the same formula pvmp3
-                // uses internally, so this path is only reachable when the
-                // header is malformed and the two parsers disagree. More input
-                // can't rescue a corrupt frame so skip it and resync.
+                // The buffer is bounded to exactly frame_size, so more input
+                // can't help. This also covers valid frames under 32 bytes
+                // (only 8 kbps MPEG2 at 22.05/24 kHz): pvmp3_decode_header
+                // rejects them outright, so they are skipped rather than
+                // decoded. Skip the frame and resync.
                 bytes_consumed = frame_size;
                 return MP3_DECODE_ERROR;
             }
@@ -750,16 +750,12 @@ Mp3Result Mp3Decoder::decode_buffered(tPVMP3DecoderExternal& ext, const uint8_t*
         frame_decoded = true;
         return MP3_OK;
     }
-    if (status == NO_ENOUGH_MAIN_DATA_ERROR) {
-        // OpenCore thinks it needs more data -- keep the buffer intact and
-        // let the caller provide more input.
-        this->expected_frame_length_ = 0;
-        return MP3_NEED_MORE_DATA;
-    }
-
+    // Any non-success status is terminal here. The full frame is already
+    // buffered (see decode_direct for why more input can't help, including the
+    // sub-32-byte MPEG2 case), so flush and skip like any decode error.
+    // Returning MP3_NEED_MORE_DATA instead would re-decode the same bytes
+    // forever, since no new input is consumed.
     this->expected_frame_length_ = 0;
-
-    // Flush remaining buffered data to avoid retrying corrupt bytes
     this->input_buffer_fill_ = 0;
     return MP3_DECODE_ERROR;
 }
