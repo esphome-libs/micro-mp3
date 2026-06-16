@@ -180,7 +180,7 @@ The wrapper is covered by a ctest suite (`tests/`) that decodes ffmpeg-generated
 ```bash
 cd tests
 cmake -DENABLE_SANITIZERS=ON -B build && cmake --build build
-ctest --test-dir build --output-on-failure
+(cd build && ctest --output-on-failure)
 ```
 
 Fixtures are checked into `tests/data/`; regenerate them with `tests/generate_test_data.sh` (needs ffmpeg with libmp3lame). The host tool can also be run directly under AddressSanitizer and UBSan:
