@@ -78,17 +78,17 @@ jobs:
       # (see tests/fuzz). -fno-sanitize-recover=all in the build makes any
       # sanitizer finding abort the run.
       - name: Configure fuzz harness (standalone)
-        run: cmake -B tests/fuzz/build -DFUZZ_USE_LIBFUZZER=OFF -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ tests/fuzz
+        run: cmake -B tests/fuzz/build-standalone -DFUZZ_USE_LIBFUZZER=OFF -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ tests/fuzz
 
       - name: Build fuzz harness
-        run: cmake --build tests/fuzz/build
+        run: cmake --build tests/fuzz/build-standalone
 
       - name: Run standalone torture battery
         env:
           FUZZ_ITERATIONS: '500'
           ASAN_OPTIONS: abort_on_error=1
           UBSAN_OPTIONS: halt_on_error=1
-        run: ./tests/fuzz/build/fuzz_mp3_decode
+        run: ./tests/fuzz/build-standalone/fuzz_mp3_decode
 
   platformio:
     name: PlatformIO Build

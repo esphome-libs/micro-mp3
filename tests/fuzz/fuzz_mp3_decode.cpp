@@ -148,6 +148,13 @@ static void run_decode_pass(Mp3Decoder& dec, const std::vector<uint8_t>& payload
     size_t window_extra = 0;  // grows when a frame needs more contiguous input
     bool header_ready = false;
 
+    // Dedicated output buffer for the undersized-output guard probe, sized at
+    // exactly MIN-1 and kept as its own allocation. If decode() ever wrote PCM
+    // despite being told the buffer is too small, the write lands past this
+    // allocation and ASan traps a heap-buffer-overflow. Passing the full-size
+    // pcm buffer (which is >= MIN) would hide such a write.
+    std::vector<uint8_t> undersized(micro_mp3::MP3_MIN_OUTPUT_BUFFER_BYTES - 1);
+
     while (off < payload.size() && iterations < MAX_ITERATIONS && total_decoded < MAX_DECODED_BYTES) {
         // One control byte drives two knobs from disjoint bit-fields: bits 7..3
         // pick a chunk size (1..1985, spanning sub-header to multi-frame), bits
@@ -159,15 +166,18 @@ static void run_decode_pass(Mp3Decoder& dec, const std::vector<uint8_t>& payload
 
         size_t avail = std::min(chunk + window_extra, payload.size() - off);
 
-        // Exercise the undersized-output guard. Once the header is parsed this
-        // is a pure no-op (the size check rejects before any state changes, so
-        // nothing is consumed or written), so it cannot disturb forward
-        // progress; we only assert its contract.
+        // Exercise the undersized-output guard. For a normal audio frame the
+        // size check at the top of decode() rejects before any state changes,
+        // so the probe neither consumes nor writes -- the assert below verifies
+        // that. (A metadata path, e.g. an ID3 tag mid-stream, can legitimately
+        // consume bytes and return NEED_MORE_DATA before the size check is
+        // reached, which is why the assert only constrains the TOO_SMALL case.)
+        // The write itself is policed by ASan via the `undersized` allocation.
         if (cfg.stress_output && header_ready && (iterations & 0x03) == 0) {
             size_t c2 = 123;
             size_t s2 = 123;
-            Mp3Result r2 = dec.decode(payload.data() + off, avail, pcm.data(),
-                                      micro_mp3::MP3_MIN_OUTPUT_BUFFER_BYTES - 1, c2, s2);
+            Mp3Result r2 = dec.decode(payload.data() + off, avail, undersized.data(),
+                                      undersized.size(), c2, s2);
             if (r2 == micro_mp3::MP3_OUTPUT_BUFFER_TOO_SMALL && (c2 != 0 || s2 != 0)) {
                 std::abort();
             }
@@ -203,17 +213,34 @@ static void run_decode_pass(Mp3Decoder& dec, const std::vector<uint8_t>& payload
         off += consumed;
 
         if (consumed == 0 && samples == 0) {
-            if (off >= payload.size()) {
-                // Empty input is the EOS signal (MP3_OK); a leftover partial
-                // frame at the tail surfaces as MP3_NEED_MORE_DATA. Either way
-                // there is no more input to offer.
-                break;
-            }
-            window_extra += chunk;  // no progress on a partial frame: widen the window
+            // No progress on a partial frame: widen the window so the next call
+            // sees more contiguous input. (off is unchanged here, so the loop
+            // guard `off < payload.size()` still holds -- the payload is drained
+            // by the empty-input EOS pass below, not from inside this branch.)
+            window_extra += chunk;
         } else {
             window_extra = 0;
         }
         iterations++;
+    }
+
+    // Signal end-of-stream by offering empty input, the way a caller drains the
+    // decoder at EOF. This drives the input_len == 0 path: a clean frame
+    // boundary returns MP3_OK with no samples, while a frame still buffered
+    // internally is flushed as PCM. Bounded so a decoder that never settles
+    // cannot spin here.
+    for (int flush = 0; flush < 4; flush++) {
+        size_t consumed = 0;
+        size_t samples = 0;
+        Mp3Result result = dec.decode(payload.data() + off, 0, pcm.data(), pcm.size(), consumed, samples);
+        check_oracle(dec, result, consumed, 0, samples, pcm.size(), header_ready);
+        if (result != micro_mp3::MP3_OK && result != micro_mp3::MP3_NEED_MORE_DATA) {
+            break;  // fatal or stream-info; nothing more to flush
+        }
+        if (samples == 0) {
+            break;  // buffer drained
+        }
+        total_decoded += samples * dec.get_channels() * sizeof(int16_t);
     }
 }
 
