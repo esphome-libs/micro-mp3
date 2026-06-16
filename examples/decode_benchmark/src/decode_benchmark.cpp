@@ -19,10 +19,11 @@
  *
  * Uses Mp3Decoder to parse and decode the MP3 stream.
  *
- * Demonstrates thread safety by testing 1-4 concurrent tasks,
- * with tasks pinned to alternating CPU cores.
+ * Demonstrates concurrent decoding with independent decoder instances by testing
+ * 1-4 tasks for each clip, with tasks pinned to alternating CPU cores.
  *
- * Each task uses its own Mp3Decoder instance.
+ * Each task uses its own Mp3Decoder instance. A single instance is not
+ * thread-safe; concurrency comes from running separate instances, one per task.
  */
 
 #include "esp_heap_caps.h"
@@ -44,7 +45,11 @@
 
 static const char* const TAG = "DECODE_BENCH";
 
-static constexpr int MAX_CONCURRENT_TASKS = 4;
+#ifndef DECODE_BENCH_MAX_CONCURRENT_TASKS
+#define DECODE_BENCH_MAX_CONCURRENT_TASKS 4
+#endif
+
+static const int MAX_CONCURRENT_TASKS = DECODE_BENCH_MAX_CONCURRENT_TASKS;
 
 // Output buffer size: large enough for one MP3 frame
 // MPEG1 stereo: 1152 samples/ch * 2 ch * 2 bytes = 4608 bytes
@@ -78,11 +83,17 @@ struct Stats {
 struct DecodeResult {
     Stats frame_stats;
     int64_t total_time_us;
+    int64_t setup_time_us;   // Time to parse the stream header (first decode() probe)
+    int64_t decode_time_us;  // Time for audio decoding only
     uint32_t sample_rate;
     uint32_t bitrate;
     uint8_t channels;
     int core_id;
     bool success;
+    bool footprint_valid;           // True only when measured alone (no concurrent tasks)
+    size_t decoder_heap_bytes;      // Total free heap consumed by this decoder once fully allocated
+    size_t decoder_internal_bytes;  // Of that, drawn from internal RAM
+    size_t decoder_psram_bytes;     // Of that, drawn from PSRAM
 };
 
 // Task parameters
@@ -91,7 +102,8 @@ struct TaskParams {
     const AudioClip* clip;
     DecodeResult* result;
     SemaphoreHandle_t done_semaphore;
-    int pinned_core;  // -1 for no pinning, 0 or 1 for specific core
+    int pinned_core;         // -1 for no pinning, 0 or 1 for specific core
+    bool measure_footprint;  // Only true for single-task runs (see decode_full_file)
 };
 
 // Initialize statistics structure
@@ -134,20 +146,39 @@ static void log_stats(const char* prefix, const char* name, Stats* s) {
              name, s->min_us, s->max_us, avg, stddev, s->count);
 }
 
-// Decode the full test audio clip and return results
-static DecodeResult decode_full_file(const AudioClip& clip) {
+// Decode the full test audio clip and return results.
+//
+// Set measure_footprint only for a solo decode task. The footprint is a free-heap
+// delta from the system-wide capability counters, which concurrent tasks would
+// corrupt with their own allocations. It is deterministic per stream, so one
+// single-task measurement suffices.
+static DecodeResult decode_full_file(const AudioClip& clip, bool measure_footprint) {
     DecodeResult result{};
     init_stats(&result.frame_stats);
     result.success = true;
     result.sample_rate = 0;
     result.bitrate = 0;
     result.channels = 0;
+    result.setup_time_us = 0;
+    result.decode_time_us = 0;
     result.core_id = xPortGetCoreID();
+    result.footprint_valid = false;
+    result.decoder_heap_bytes = 0;
+    result.decoder_internal_bytes = 0;
+    result.decoder_psram_bytes = 0;
+
+    // Baseline free heap before any allocation, split by capability, so the
+    // post-init delta shows how the footprint (decoder state + PCM buffer) divides
+    // between internal RAM and PSRAM.
+    size_t internal_before = measure_footprint ? heap_caps_get_free_size(MALLOC_CAP_INTERNAL) : 0;
+    size_t psram_before = measure_footprint ? heap_caps_get_free_size(MALLOC_CAP_SPIRAM) : 0;
 
     // Create decoder (constructor always succeeds; lazy allocation on first decode)
     micro_mp3::Mp3Decoder decoder;
 
-    // PCM output buffer: heap-allocated to avoid stack overflow in FreeRTOS tasks
+    // PCM output buffer: heap-allocated to avoid stack overflow in FreeRTOS tasks.
+    // Sized once to the MPEG1 stereo worst case; MP3 has a known maximum frame size,
+    // so no resize-on-the-fly is needed.
     uint8_t* pcm_buffer = (uint8_t*)heap_caps_malloc(PCM_OUTPUT_BUFFER_BYTES, MALLOC_CAP_DEFAULT);
     if (pcm_buffer == nullptr) {
         ESP_LOGE(TAG, "Failed to allocate PCM output buffer");
@@ -176,6 +207,26 @@ static DecodeResult decode_full_file(const AudioClip& clip) {
 
         int64_t frame_time = esp_timer_get_time() - frame_start;
 
+        // The first decode() call parses the stream header and returns
+        // MP3_STREAM_INFO_READY without emitting audio. Record setup time here, and
+        // (solo runs only) capture the footprint now that the decoder is fully
+        // allocated: lazy-init decoder state plus the PCM buffer.
+        if (decode_result == micro_mp3::MP3_STREAM_INFO_READY) {
+            result.setup_time_us = esp_timer_get_time() - iteration_start;
+
+            if (measure_footprint) {
+                size_t internal_after = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+                size_t psram_after = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+                result.decoder_internal_bytes =
+                    internal_before > internal_after ? internal_before - internal_after : 0;
+                result.decoder_psram_bytes =
+                    psram_before > psram_after ? psram_before - psram_after : 0;
+                result.decoder_heap_bytes =
+                    result.decoder_internal_bytes + result.decoder_psram_bytes;
+                result.footprint_valid = true;
+            }
+        }
+
         // Update statistics only when samples were decoded
         // samples_decoded is per-channel; total output = samples_decoded * channels
         if (samples_decoded > 0) {
@@ -185,7 +236,7 @@ static DecodeResult decode_full_file(const AudioClip& clip) {
         // Check for errors
         if (decode_result < 0) {
             if (decode_result == micro_mp3::MP3_DECODE_ERROR) {
-                // Recoverable — the decoder has already skipped the bad frame
+                // Recoverable: the decoder has already skipped the bad frame
                 ESP_LOGW(TAG, "Skipping corrupt frame (consumed=%zu, remaining=%zu)",
                          bytes_consumed, input_remaining);
             } else {
@@ -202,7 +253,7 @@ static DecodeResult decode_full_file(const AudioClip& clip) {
             input_ptr += bytes_consumed;
             input_remaining -= bytes_consumed;
         } else if (decode_result < 0) {
-            // Fatal error with 0 bytes consumed — stop to avoid infinite loop
+            // Fatal error with 0 bytes consumed: stop to avoid infinite loop
             break;
         }
 
@@ -211,6 +262,7 @@ static DecodeResult decode_full_file(const AudioClip& clip) {
     }
 
     result.total_time_us = esp_timer_get_time() - iteration_start;
+    result.decode_time_us = result.total_time_us - result.setup_time_us;
     result.sample_rate = decoder.get_sample_rate();
     result.bitrate = decoder.get_bitrate();
     result.channels = decoder.get_channels();
@@ -235,11 +287,26 @@ static void log_decode_result(const char* prefix, DecodeResult* result) {
         (double)result->frame_stats.total_samples / result->sample_rate * 1000000.0;
     double rtf = (double)result->total_time_us / audio_duration_us;
 
+    double decode_rtf = (double)result->decode_time_us / audio_duration_us;
+
     ESP_LOGI(TAG,
-             "%sTotal: %" PRId64 " ms (%.1fs audio), RTF: %.3f (%.1fx real-time), "
+             "%sTotal: %" PRId64 " ms (setup: %" PRId64 " ms, decode: %" PRId64
+             " ms), %.1fs audio, RTF: %.3f (%.1fx), decode RTF: %.3f (%.1fx), "
              "%u Hz, %u ch, %" PRIu32 " kbps, core %d",
-             prefix, result->total_time_us / 1000, audio_duration_us / 1000000.0, rtf, 1.0 / rtf,
-             result->sample_rate, result->channels, result->bitrate, result->core_id);
+             prefix, result->total_time_us / 1000, result->setup_time_us / 1000,
+             result->decode_time_us / 1000, audio_duration_us / 1000000.0, rtf, 1.0 / rtf,
+             decode_rtf, 1.0 / decode_rtf, result->sample_rate, result->channels, result->bitrate,
+             result->core_id);
+
+    // Only logged for single-task runs; under concurrency the measurement is
+    // unreliable (see decode_full_file) and is skipped entirely.
+    if (result->footprint_valid) {
+        ESP_LOGI(TAG,
+                 "%sDecoder footprint: %zu bytes (internal: %zu, PSRAM: %zu) (decoder state + PCM "
+                 "buffer)",
+                 prefix, result->decoder_heap_bytes, result->decoder_internal_bytes,
+                 result->decoder_psram_bytes);
+    }
 }
 
 // FreeRTOS task function for concurrent decoding
@@ -250,7 +317,7 @@ static void decode_task(void* params) {
              xPortGetCoreID());
 
     // Decode the full file
-    *task_params->result = decode_full_file(*task_params->clip);
+    *task_params->result = decode_full_file(*task_params->clip, task_params->measure_footprint);
 
     ESP_LOGI(TAG, "Task %d finished (%" PRId64 " ms)", task_params->task_id,
              task_params->result->total_time_us / 1000);
@@ -271,7 +338,7 @@ extern "C" void app_main(void) {
     ESP_LOGI(TAG, "Free heap: %zu bytes", esp_get_free_heap_size());
     ESP_LOGI(TAG, "Free PSRAM: %zu bytes", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
     ESP_LOGI(TAG, "Free Internal: %zu bytes", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
-    ESP_LOGI(TAG, "Thread safety test: up to %d concurrent tasks", MAX_CONCURRENT_TASKS);
+    ESP_LOGI(TAG, "Concurrent decode test: up to %d independent tasks", MAX_CONCURRENT_TASKS);
 
     // Create semaphore for task synchronization
     SemaphoreHandle_t done_semaphore = xSemaphoreCreateCounting(MAX_CONCURRENT_TASKS, 0);
@@ -310,6 +377,9 @@ extern "C" void app_main(void) {
                     params[i].result = &results[i];
                     params[i].done_semaphore = done_semaphore;
                     params[i].pinned_core = i % 2;
+                    // Only trust the heap-diff footprint when this decoder runs
+                    // alone; concurrent tasks share the global free-heap counters.
+                    params[i].measure_footprint = (num_tasks == 1);
                 }
 
                 int64_t start_time = esp_timer_get_time();
@@ -362,6 +432,15 @@ extern "C" void app_main(void) {
         ESP_LOGI(TAG, "");
         ESP_LOGI(TAG, "All decodes successful: %s", all_success ? "YES" : "NO");
         ESP_LOGI(TAG, "Free heap: %zu bytes", esp_get_free_heap_size());
+
+        // Low-water marks since boot. They survive task teardown, so they capture
+        // the trough during peak concurrency (4 decoders + buffers + stacks live at
+        // once), not the current idle state.
+        ESP_LOGI(TAG, "Min free heap ever:     %zu bytes", esp_get_minimum_free_heap_size());
+        ESP_LOGI(TAG, "Min free internal ever: %zu bytes",
+                 heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
+        ESP_LOGI(TAG, "Min free PSRAM ever:    %zu bytes",
+                 heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM));
         ESP_LOGI(TAG, "---");
 
         // Small delay between iterations
