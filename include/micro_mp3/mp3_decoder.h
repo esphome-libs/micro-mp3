@@ -15,8 +15,7 @@
 /// @file
 /// @brief MP3 streaming decoder wrapper
 
-#ifndef MP3_DECODER_H
-#define MP3_DECODER_H
+#pragma once
 
 #include <stddef.h>
 #include <stdint.h>
@@ -470,5 +469,3 @@ private:
 };
 
 }  // namespace micro_mp3
-
-#endif  // MP3_DECODER_H
