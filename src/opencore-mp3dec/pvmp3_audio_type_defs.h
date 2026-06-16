@@ -61,7 +61,21 @@
 #ifndef PVMP3_AUDIO_TYPE_DEFS_H
 #define PVMP3_AUDIO_TYPE_DEFS_H
 
-#include    "oscl_base.h"
+/* Fixed-width type aliases and the unused-argument macro, formerly pulled in
+ * from oscl/oscl_base.h. The oscl layer was collapsed into its only two
+ * consumers (this file and mp3_mem_funcs.h); see CHANGES.md. */
+#include <stdint.h>
+
+typedef int8_t int8;
+typedef uint8_t uint8;
+typedef int16_t int16;
+typedef uint16_t uint16;
+typedef int32_t int32;
+typedef uint32_t uint32;
+typedef int64_t int64;
+typedef uint64_t uint64;
+
+#define OSCL_UNUSED_ARG(x) (void)(x)
 
 
 #ifndef Char

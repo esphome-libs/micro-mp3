@@ -88,9 +88,6 @@ extern "C"
 {
 #endif
 
-    ERROR_CODE pvmp3_frame_synch(tPVMP3DecoderExternal *pExt,
-    void                  *pMem);
-
     ERROR_CODE pvmp3_header_sync(tmp3Bits  *inputStream);
 
 

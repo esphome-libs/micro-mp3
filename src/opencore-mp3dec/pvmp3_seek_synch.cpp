@@ -24,7 +24,6 @@
    Filename: pvmp3_seek_synch.cpp
 
    Functions:
-        pvmp3_seek_synch
         pvmp3_header_sync
 
 
@@ -36,43 +35,9 @@
 
  Description:
 
-------------------------------------------------------------------------------
- INPUT AND OUTPUT DEFINITIONS
-
-pvmp3_frame_synch
-
-Input
-    pExt = pointer to the external interface structure. See the file
-           pvmp3decoder_api.h for a description of each field.
-           Data type of pointer to a tPVMP3DecoderExternal
-           structure.
-
-    pMem = void pointer to hide the internal implementation of the library
-           It is cast back to a tmp3dec_file structure. This structure
-           contains information that needs to persist between calls to
-           this function, or is too big to be placed on the stack, even
-           though the data is only needed during execution of this function
-           Data type void pointer, internally pointer to a tmp3dec_file
-           structure.
-
-
-------------------------------------------------------------------------------
- FUNCTION DESCRIPTION
-
-    search mp3 sync word, when found, it verifies, based on header parameters,
-    the locations of the very next sync word,
-    - if fails, then indicates a false sync,
-    - otherwise, it confirm synchronization of at least 2 consecutives frames
-
-------------------------------------------------------------------------------
- REQUIREMENTS
-
-
-------------------------------------------------------------------------------
- REFERENCES
-
-------------------------------------------------------------------------------
- PSEUDO-CODE
+   microMP3: pvmp3_frame_synch() was removed from this file; it was dead code
+   (its only caller, the deleted pvmp3_decoder.cpp, is gone). See CHANGES.md.
+   This file now contains only pvmp3_header_sync().
 
 ------------------------------------------------------------------------------
 */
@@ -84,9 +49,6 @@ Input
 
 #include "pvmp3_seek_synch.h"
 #include "pvmp3_getbits.h"
-#include "s_tmp3dec_file.h"
-#include "pv_mp3dec_fxd_op.h"
-#include "pvmp3_tables.h"
 
 
 /*----------------------------------------------------------------------------
@@ -126,128 +88,6 @@ Input
 ----------------------------------------------------------------------------*/
 
 
-
-ERROR_CODE pvmp3_frame_synch(tPVMP3DecoderExternal *pExt,
-                             void                  *pMem) /* bit stream structure */
-{
-    uint16 val;
-    ERROR_CODE err;
-
-    tmp3dec_file      *pVars;
-
-    pVars = (tmp3dec_file *)pMem;
-
-    pVars->inputStream.pBuffer = pExt->pInputBuffer;
-    pVars->inputStream.usedBits = (pExt->inputBufferUsedLength << 3); // in bits
-
-
-    pVars->inputStream.inputBufferCurrentLength = (pExt->inputBufferCurrentLength); // in bits
-
-    err = pvmp3_header_sync(&pVars->inputStream);
-
-    if (err == NO_DECODING_ERROR)
-    {
-        /* validate synchronization by checking two consecutive sync words */
-
-        // to avoid multiple bitstream accesses
-        uint32 temp = getNbits(&pVars->inputStream, 21);
-        // put back whole header
-        pVars->inputStream.usedBits -= 21 + SYNC_WORD_LNGTH;
-
-        int32  version;
-
-        switch (temp >> 19)  /* 2 */
-        {
-            case 0:
-                version = MPEG_2_5;
-                break;
-            case 2:
-                version = MPEG_2;
-                break;
-            case 3:
-                version = MPEG_1;
-                break;
-            default:
-                version = INVALID_VERSION;
-                break;
-        }
-
-        int32 freq_index = (temp << 20) >> 30;
-        /*
-         * microMP3 FIX: bitrate_index 15 ("reserved") would read past the
-         * end of the [3][15] mp3_bitrate table here, the same OOB closed at
-         * the parse site in pvmp3_decode_header.cpp. This sync-scan path is
-         * reached independently (it can run before the parser's guard fires),
-         * so reject 15 here too. Found by libFuzzer code review.
-         */
-        int32 bitrate_index = (temp << 16) >> 28;
-
-        if (version != INVALID_VERSION && (freq_index != 3) && (bitrate_index != 15) && (bitrate_index != 0))
-        {
-            int32 numBytes = fxp_mul32_Q28(mp3_bitrate[version][bitrate_index] << 20,
-                                           inv_sfreq[freq_index]);
-
-            numBytes >>= (20 - version);
-
-            if (version != MPEG_1)
-            {
-                numBytes >>= 1;
-            }
-            if ((temp << 22) >> 31)
-            {
-                numBytes++;
-            }
-
-            if (numBytes > (int32)pVars->inputStream.inputBufferCurrentLength)
-            {
-                /* frame should account for padding and 2 bytes to check sync */
-                pExt->CurrentFrameLength = numBytes + 3;
-                return (SYNCH_LOST_ERROR);
-            }
-            else if (numBytes == (int32)pVars->inputStream.inputBufferCurrentLength)
-            {
-                /* No enough data to validate, but current frame appears to be correct ( EOF case) */
-                pExt->inputBufferUsedLength = pVars->inputStream.usedBits >> 3;
-                return (NO_DECODING_ERROR);
-            }
-            else
-            {
-
-                int32 offset = pVars->inputStream.usedBits + ((numBytes) << 3);
-
-                offset >>= INBUF_ARRAY_INDEX_SHIFT;
-                uint8    *pElem  = pVars->inputStream.pBuffer + offset;
-                uint16 tmp1 = *(pElem++);
-                uint16 tmp2 = *(pElem);
-
-                val = (tmp1 << 3);
-                val |= (tmp2 >> 5);
-            }
-        }
-        else
-        {
-            val = 0; // force mismatch
-        }
-
-        if (val == SYNC_WORD)
-        {
-            pExt->inputBufferUsedLength = pVars->inputStream.usedBits >> 3; ///  !!!!!
-            err = NO_DECODING_ERROR;
-        }
-        else
-        {
-            pExt->inputBufferCurrentLength = 0;
-            err = SYNCH_LOST_ERROR;
-        }
-    }
-    else
-    {
-        pExt->inputBufferCurrentLength = 0;
-    }
-
-    return(err);
-
-}
 
 /*
 ------------------------------------------------------------------------------

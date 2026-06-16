@@ -32,7 +32,6 @@ function(mp3_configure_host TARGET SOURCE_DIR)
     # Private include directories (internal headers)
     target_include_directories(${TARGET} PRIVATE
         "${MP3_SOURCE_DIR}"
-        "${MP3_SOURCE_DIR}/oscl"
     )
 
     # Public include directories (API headers)
