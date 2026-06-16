@@ -46,7 +46,7 @@ pio run -e esp32-s3 -t upload -t monitor
 - **Header-only probe** — first `decode()` call returns `MP3_STREAM_INFO_READY` (2) after parsing the MP3 frame header (no audio decoded). Stream properties (`sample_rate_`, `output_channels_`, `bitrate_`) are set from the 4-byte header. The probe does **not** consume the frame body: `bytes_consumed` is 0 when the header was parsed in place (fast path), or a small value (≤ 3) when the header was completed from internal buffering (slow path). ID3v2 tag bytes and resync skip bytes are reported via separate `MP3_NEED_MORE_DATA` returns, not as part of `MP3_STREAM_INFO_READY`. Caller advances by `bytes_consumed`, sets up their audio pipeline, then calls `decode()` again — the first frame is decoded zero-copy from the caller's buffer (fast path) or pulled from the internal buffer + caller input (slow path); a leading Xing/Info header frame is skipped at this step rather than decoded (see Gapless trimming). Because the frame body stays in the caller's buffer, "input empty" remains a valid EOS signal even for single-frame files.
 - **Gapless trimming** — transparent (no public API beyond `decode()`). The leading Xing/Info header frame is detected and skipped without decoding by `record_vbr_header_frame()` (which parses the tag via `parse_vbr_header()`). Start trim drops `encoder_delay + 529` samples per channel (529 = 528+1 filterbank delay; `encoder_delay` is read from the LAME-style extension at its fixed offset like ffmpeg, so non-LAME encoders such as Lavc also work). End trim caps total emitted samples at `frames * samples_per_frame - encoder_delay - padding` using the Xing frame count, so no end-of-stream signal is needed. Falls back to no end trim when the frame count is absent, and no trimming at all without a Xing/Info header.
 - **No AAC+ equivalent** — MP3 is simpler; no SBR or Parametric Stereo handling needed.
-- **ESP32 memory** — uses `heap_caps_malloc_prefer()` with Kconfig-controlled placement (`MP3_DECODER_PREFER_PSRAM`, etc.). Host builds use plain `malloc`.
+- **ESP32 memory** — uses `heap_caps_malloc_prefer()` with Kconfig-controlled placement (`MICRO_MP3_PREFER_PSRAM`, etc.). Host builds use plain `malloc`.
 - **`pvmp3_decoder.cpp` / `pvmp3_decoder.h` removed** — depended on missing OSCL headers; all required functionality is available through `pvmp3_framedecoder.cpp` and friends. Deleted from the fork (see `src/opencore-mp3dec/CHANGES.md`).
 - **No ARM assembly** — the non-generic fixed-point back-ends (the ARM/ARM-GCC/MSC-EVC variant headers, the `asm/` folder, and PacketVideo's `make/` fragments) were removed (see `src/opencore-mp3dec/CHANGES.md`). The C-equivalent fixed-point routines, now folded into `pv_mp3dec_fxd_op.h`, are used on all platforms. No Xtensa-optimized multiply path (unlike micro-aac).
 
@@ -54,10 +54,10 @@ pio run -e esp32-s3 -t upload -t monitor
 
 Memory placement only — no feature flags (no AAC_PLUS/HQ_SBR/PARAMETRIC_STEREO equivalents):
 
-- `CONFIG_MP3_DECODER_PREFER_PSRAM` — Try PSRAM first, fall back to internal RAM (default)
-- `CONFIG_MP3_DECODER_PREFER_INTERNAL` — Try internal RAM first, fall back to PSRAM
-- `CONFIG_MP3_DECODER_PSRAM_ONLY` — Strict PSRAM; fails if unavailable (requires `SPIRAM`)
-- `CONFIG_MP3_DECODER_INTERNAL_ONLY` — Never use PSRAM
+- `CONFIG_MICRO_MP3_PREFER_PSRAM` — Try PSRAM first, fall back to internal RAM (requires `SPIRAM`; default when `SPIRAM` is enabled)
+- `CONFIG_MICRO_MP3_PREFER_INTERNAL` — Try internal RAM first, fall back to PSRAM (requires `SPIRAM`)
+- `CONFIG_MICRO_MP3_PSRAM_ONLY` — Strict PSRAM; fails if unavailable (requires `SPIRAM`)
+- `CONFIG_MICRO_MP3_INTERNAL_ONLY` — Never use PSRAM (default when `SPIRAM` is disabled)
 
 ## Things to Watch Out For
 
