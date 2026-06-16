@@ -85,12 +85,6 @@ extern "C"
         return (Int32)(((int64)(a) * b) >> 27);
     }
 
-    __inline Int32 fxp_mul32_Q26(const Int32 a, const Int32 b)
-    {
-        return (Int32)(((int64)(a) * b) >> 26);
-    }
-
-
     __inline Int32 fxp_mac32_Q32(Int32 L_add, const Int32 a, const Int32 b)
     {
         return (L_add + (Int32)(((int64)(a) * b) >> 32));

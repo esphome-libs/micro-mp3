@@ -138,7 +138,7 @@ to `band += 2`. Found during code review.
 
 ### `pvmp3_seek_synch.cpp`
 
-Two fixes:
+Two fixes plus the removal of a dead function (see also "Removed Functions"):
 
 1. Fixed a 1-byte heap-buffer-overflow read in `pvmp3_header_sync()`. The
    sync scan loop terminated on `usedBits < availableBits`, but its body
@@ -153,23 +153,22 @@ Two fixes:
    wrapper no longer does so, but the underlying pvmp3 defect remains
    worth fixing for defense in depth.
 
-2. Reject `bitrate_index == 15` ("reserved/invalid" per the MP3 spec)
-   in the candidate-frame validation block. The `mp3_bitrate` table is
-   declared `int16[3][15]`, so indexing it with 15 is a guaranteed
-   out-of-bounds read. The parse-site fix in `pvmp3_decode_header.cpp`
-   does NOT cover this site: `pvmp3_header_sync()` indexes the table
-   independently before any header is parsed. Found during code review
-   of the libFuzzer-driven fix series.
-
-3. Fixed the byte-alignment typo in `pvmp3_header_sync()`. The upstream
+2. Fixed the byte-alignment typo in `pvmp3_header_sync()`. The upstream
    "byte aligment" step read `usedBits = (usedBits + 7) & 8`, which keeps
    only bit 3 and resets `usedBits` to 0 or 8 instead of rounding up to the
    next multiple of 8 (a typo for `& ~7`). The effect is a logic error,
    rewinding the read cursor toward the buffer start, not a memory-safety
    issue: `& 8` can only yield 0 or 8, both in bounds. The scan is dormant
    in the wrapper, which pre-validates sync at offset 0 before pvmp3 sees
-   the buffer, and the only other caller `pvmp3_frame_synch` is uncalled.
-   Corrected to `& ~7u`. Found during code review.
+   the buffer. Corrected to `& ~7u`. Found during code review.
+
+`pvmp3_header_sync()` is still reached through `pvmp3_decode_header.cpp`, so
+it stays. Its former sibling `pvmp3_frame_synch()` was removed (see below);
+that removal also deletes the candidate-frame validation block which had its
+own `bitrate_index == 15` out-of-bounds guard. That guard is now moot because
+the `mp3_bitrate[version][bitrate_index]` indexing site no longer exists; the
+equivalent OOB at the live parse site is still closed in
+`pvmp3_decode_header.cpp` (above).
 
 ### `pvmp3_normalize.cpp`
 
@@ -234,6 +233,26 @@ unused.
     directly to the C library `memset` / `memcpy` / `memmove` / `memcmp` instead
     of going through the `oscl_mem*` aliases. The unused `oscl_malloc` / `oscl_free`
     were dropped.
+
+## Removed Functions
+
+Dead code surfaced by the libFuzzer coverage report (`tests/fuzz/coverage.sh`):
+functions with zero callers in any build configuration. Removed to shrink the
+audit surface; both removals raised corpus coverage of their files to 100%.
+
+- **`pvmp3_frame_synch()`** (`pvmp3_seek_synch.cpp` / `.h`) -- the sync-and-validate
+  entry point. Its only caller was the already-deleted `pvmp3_decoder.cpp` (see
+  "Removed Files"), so nothing reached it; the live decode path uses
+  `pvmp3_framedecoder()` and reaches `pvmp3_header_sync()` directly via
+  `pvmp3_decode_header.cpp`. Removing it also dropped the now-redundant
+  `s_tmp3dec_file.h`, `pv_mp3dec_fxd_op.h`, and `pvmp3_tables.h` includes from
+  `pvmp3_seek_synch.cpp` (they were only needed by the deleted body).
+
+- **`fxp_mul32_Q26()`** (`pv_mp3dec_fxd_op_c_equivalent.h`,
+  `pv_mp3dec_fxd_op_arm.h`, `pv_mp3dec_fxd_op_arm_gcc.h`,
+  `pv_mp3dec_fxd_op_msc_evc.h`) -- a Q26 fixed-point multiply helper defined in
+  all four platform-variant headers but invoked by no DSP routine. Removed from
+  every variant to keep the parallel definitions consistent.
 
 ## Excluded from Build
 

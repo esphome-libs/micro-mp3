@@ -125,22 +125,6 @@ extern "C"
     }
 
 
-    __inline  Int32 fxp_mul32_Q26(Int32 L_var1,  Int32 L_var2)
-    {
-
-        Int32 result64_hi;
-        Int32 result64_lo;
-        __asm
-        {
-            smull result64_lo, result64_hi, L_var2, L_var1
-            mov   result64_lo, result64_lo, lsr #26
-            add   result64_hi, result64_lo, result64_hi, asl  #6
-        }
-        return (result64_hi);
-    }
-
-
-
     __inline  Int32 fxp_mac32_Q32(Int32 L_add,  Int32 L_var1, const Int32 L_var2)
     {
         __asm

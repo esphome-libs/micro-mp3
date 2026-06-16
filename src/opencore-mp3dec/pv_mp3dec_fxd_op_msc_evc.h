@@ -87,12 +87,6 @@ extern "C"
 
 
 
-    __inline int32 fxp_mul32_Q26(const int32 a, const int32 b)
-    {
-        return (int32)(((int64)(a) * b) >> 26);
-    }
-
-
     __inline int32 fxp_mac32_Q32(int32 L_add, const int32 a, const int32 b)
     {
         return (L_add + _MulHigh(b, a));

@@ -165,24 +165,6 @@ extern "C"
     }
 
 
-    static inline int32 fxp_mul32_Q26(const int32 a, const int32 b)
-{
-        int32 result64_hi;
-        int32 result64_lo;
-        register int32 ra = (int32)a;
-        register int32 rb = (int32)b;
-        asm volatile("smull %1, %0, %2, %3\n\t"
-                     "mov   %1, %1, lsr #26\n\t"
-                     "add   %0, %1, %0, asl #6"
-             : "=&r*i"(result64_hi),
-                     "=&r*i"(result64_lo)
-                             : "r"(ra),
-                             "r"(rb));
-        return (result64_hi);
-
-    }
-
-
 
     static inline int32 fxp_mac32_Q32(int32 L_add, const int32 a, const int32 b)
 {
