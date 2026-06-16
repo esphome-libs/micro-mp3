@@ -1,0 +1,57 @@
+# libFuzzer dictionary for MP3 (MPEG 1/2/2.5 Layer III) fuzzing.
+# Format: one token per line, quoted C-escaped string.
+#
+# Tokens are deduplicated: libFuzzer ignores duplicate entries, so a byte
+# string that plays several roles is listed once, at its first use.
+
+# Frame sync: 0xFF followed by a byte whose top three bits are set. The second
+# byte also encodes MPEG version (bits 4-3) and layer (bits 2-1), so the common
+# Layer III combinations are spelled out:
+#   FB MPEG1 L3, F3 MPEG2 L3, E3 MPEG2.5 L3,
+#   FA MPEG1 L3 (CRC), F2 MPEG2 L3 (CRC), E2 MPEG2.5 L3 (CRC)
+"\xff\xfb"
+"\xff\xf3"
+"\xff\xe3"
+"\xff\xfa"
+"\xff\xf2"
+"\xff\xe2"
+
+# A bare leading sync byte (first half of a sync pair, also page-fill 0xFF).
+"\xff"
+
+# Gapless / VBR header magics (appear after the side information of the first
+# frame). "Xing" for VBR, "Info" for CBR, "LAME" for the encoder extension.
+"Xing"
+"Info"
+"LAME"
+
+# ID3v2 tag signature (start of file) and the ID3v1 trailer signature.
+"ID3"
+"TAG"
+
+# Common ID3v2 frame identifiers (four bytes, immediately after the 10-byte
+# tag header), so the ID3 skip walks realistic tag bodies.
+"TIT2"
+"TPE1"
+"TALB"
+"TCON"
+"TRCK"
+"TYER"
+"TXXX"
+"COMM"
+"APIC"
+"PRIV"
+
+# Syncsafe integer boundaries. ID3v2 sizes are stored 7 bits per byte, so 0x7F
+# is the max per-byte value and 0x80 is the bit that must stay clear; these
+# probe the multi-byte size decode and its bounds checks.
+"\x7f"
+"\x80"
+"\x7f\x7f\x7f\x7f"
+"\x00\x00\x00\x00"
+
+# All-ones and zero bytes: padding, reserved fields, and the adversarial sync
+# run (every pair passes the 11-bit sync test, fails full validation).
+"\x00"
+"\xff\xff"
+"\xff\xff\xff\xff"
