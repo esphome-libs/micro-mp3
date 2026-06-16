@@ -34,9 +34,10 @@ function(mp3_configure_host TARGET SOURCE_DIR)
         "${MP3_SOURCE_DIR}"
     )
 
-    # Public include directories (API headers)
+    # Public include directories (API headers only). The internal OpenCore
+    # headers stay PRIVATE above so they don't leak onto consumers' include
+    # path (matches the ESP-IDF path in esp-idf.cmake).
     target_include_directories(${TARGET} PUBLIC
-        "${MP3_SOURCE_DIR}"
         "${SOURCE_DIR}/include"
     )
 
