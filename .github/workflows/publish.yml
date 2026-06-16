@@ -16,10 +16,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # Block the release unless every required CI check succeeded on this
-          # commit. Matrix jobs append parameters to the name (e.g. "PlatformIO
-          # Build (decode_benchmark)"), so match by prefix rather than exact name.
+          # commit. The release tag name is passed as the check-runs ref so the
+          # API resolves it to the underlying commit (github.sha can be the tag
+          # object SHA for annotated tags, which carries no check runs). Matrix
+          # jobs append parameters to the name (e.g. "PlatformIO Build
+          # (decode_benchmark)"), so match by prefix rather than exact name.
           EXPECTED_CHECKS=("Pre-commit checks" "Static analysis" "Build" "Test" "Fuzz build" "PlatformIO Build")
-          CONCLUSIONS=$(gh api repos/${{ github.repository }}/commits/${{ github.sha }}/check-runs \
+          CONCLUSIONS=$(gh api "repos/${{ github.repository }}/commits/${{ github.event.release.tag_name }}/check-runs" \
             --paginate --jq '.check_runs[] | .name + "=" + .conclusion')
 
           for check in "${EXPECTED_CHECKS[@]}"; do
