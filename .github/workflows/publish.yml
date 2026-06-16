@@ -8,6 +8,8 @@ jobs:
   ci-gate:
     name: CI gate
     runs-on: ubuntu-latest
+    permissions:
+      checks: read
     steps:
       - name: Verify CI passed on release commit
         env:
