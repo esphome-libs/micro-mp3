@@ -152,16 +152,16 @@ idf.py menuconfig
 
 ### Memory Placement
 
-Decoder state memory can be configured with four placement options:
+Decoder state memory can be configured with four placement options. The three PSRAM options require `SPIRAM` and only appear in menuconfig when it is enabled:
 
-| Option | Default | Description |
-| ------ | ------- | ----------- |
-| `CONFIG_MICRO_MP3_PREFER_PSRAM` | y | Try PSRAM first, fall back to internal RAM |
-| `CONFIG_MICRO_MP3_PREFER_INTERNAL` | | Try internal RAM first, fall back to PSRAM |
-| `CONFIG_MICRO_MP3_PSRAM_ONLY` | | Strict PSRAM; fails if unavailable |
-| `CONFIG_MICRO_MP3_INTERNAL_ONLY` | | Never use PSRAM |
+| Option | Description |
+| ------ | ----------- |
+| `CONFIG_MICRO_MP3_PREFER_PSRAM` | Try PSRAM first, fall back to internal RAM (requires `SPIRAM`) |
+| `CONFIG_MICRO_MP3_PREFER_INTERNAL` | Try internal RAM first, fall back to PSRAM (requires `SPIRAM`) |
+| `CONFIG_MICRO_MP3_PSRAM_ONLY` | Strict PSRAM; fails if unavailable (requires `SPIRAM`) |
+| `CONFIG_MICRO_MP3_INTERNAL_ONLY` | Never use PSRAM |
 
-Prefer PSRAM (the default) conserves internal RAM at a slight performance cost. Prefer internal RAM for better decode throughput when RAM is plentiful.
+The default is `CONFIG_MICRO_MP3_PREFER_PSRAM` when `SPIRAM` is enabled and `CONFIG_MICRO_MP3_INTERNAL_ONLY` otherwise. Prefer PSRAM conserves internal RAM at a slight performance cost; prefer internal RAM for better decode throughput when RAM is plentiful.
 
 ## Performance
 

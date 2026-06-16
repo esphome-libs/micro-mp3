@@ -54,10 +54,10 @@ pio run -e esp32-s3 -t upload -t monitor
 
 Memory placement only — no feature flags (no AAC_PLUS/HQ_SBR/PARAMETRIC_STEREO equivalents):
 
-- `CONFIG_MICRO_MP3_PREFER_PSRAM` — Try PSRAM first, fall back to internal RAM (default)
-- `CONFIG_MICRO_MP3_PREFER_INTERNAL` — Try internal RAM first, fall back to PSRAM
+- `CONFIG_MICRO_MP3_PREFER_PSRAM` — Try PSRAM first, fall back to internal RAM (requires `SPIRAM`; default when `SPIRAM` is enabled)
+- `CONFIG_MICRO_MP3_PREFER_INTERNAL` — Try internal RAM first, fall back to PSRAM (requires `SPIRAM`)
 - `CONFIG_MICRO_MP3_PSRAM_ONLY` — Strict PSRAM; fails if unavailable (requires `SPIRAM`)
-- `CONFIG_MICRO_MP3_INTERNAL_ONLY` — Never use PSRAM
+- `CONFIG_MICRO_MP3_INTERNAL_ONLY` — Never use PSRAM (default when `SPIRAM` is disabled)
 
 ## Things to Watch Out For
 
