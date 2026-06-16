@@ -59,7 +59,12 @@ function(mp3_configure_host TARGET SOURCE_DIR)
     target_compile_options(${TARGET} PRIVATE
         -Wall
         -Wextra
+        -Wpedantic
         -Wshadow
+        -Wconversion
+        -Wsign-conversion
+        -Wdouble-promotion
+        -Wformat=2
         -Wimplicit-fallthrough
         $<$<BOOL:${ENABLE_WERROR}>:-Werror>
     )
