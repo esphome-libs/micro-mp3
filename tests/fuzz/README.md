@@ -1,4 +1,4 @@
-# micro-mp3 fuzzer
+# microMP3 fuzzer
 
 libFuzzer harness for the MP3 decoder.
 
@@ -9,14 +9,13 @@ libFuzzer harness for the MP3 decoder.
 
 ## Decoder configuration coverage
 
-The harness also varies how the decoder is *driven*, so the chunking, equalizer,
+The harness also varies how the decoder is driven, so the chunking, equalizer,
 output-buffer, and reset paths get exercised, not just a single straight-through
-decode. Configuration is consumed from the **tail** of the input:
-`FuzzedDataProvider` integral reads come off the back, so the **payload prefix is
-preserved**: only the trailing cfg/control bytes are peeled off, leaving the
-front of a real `.mp3` seed (or a merged corpus) intact. The decoder never sees
-the stripped tail bytes, so a bare seed loses ~65 bytes off its end while the
-rest decodes as-is.
+decode. Configuration is consumed from the tail of the input: `FuzzedDataProvider`
+integral reads come off the back, so the payload prefix is preserved: only the
+trailing cfg/control bytes are peeled off, leaving the front of a real `.mp3` seed
+(or a merged corpus) intact. The decoder never sees the stripped tail bytes, so a
+bare seed loses ~65 bytes off its end while the rest decodes as-is.
 
 - One cfg byte (the very last byte): bit 0 replays the whole payload across a
   `reset()`; bit 1 doubles the output buffer (still valid); bit 2 periodically
@@ -39,7 +38,7 @@ After the header is parsed this is a pure no-op (the decoder rejects the size
 before touching any state), so it exercises the `MP3_OUTPUT_BUFFER_TOO_SMALL`
 contract without disturbing forward progress.
 
-On every decode the harness asserts a set of **Tier 1 structural invariants**
+On every decode the harness asserts a set of structural invariants
 (single-decode, no reference needed): bytes consumed never exceed the bytes
 offered; the channel count is 0 (pre-probe) or 1/2; the per-channel sample count
 never exceeds `MP3_MAX_SAMPLES_PER_FRAME`; samples are only emitted once the
@@ -100,7 +99,7 @@ cp seeds_mp3/* corpus_mp3/
 `generate_seeds.sh` spans MPEG1/2/2.5, mono/stereo/joint-stereo, CBR/VBR,
 Xing/Info/none, with/without ID3v2, a range of bitrates and sample rates, and
 several content shapes (tone/sweep/noise/silence/impulse/DC) plus very short
-clips. Each generated seed gets a **config tail** appended (see "Decoder
+clips. Each generated seed gets a config tail appended (see "Decoder
 configuration coverage" above): because the harness consumes its cfg/control
 bytes from the back of the input, a bare `.mp3` would lose its tail to those
 reads. The tail is a neutral chunk-control region plus one cfg byte, so the whole
@@ -114,19 +113,16 @@ any time with `./generate_seeds.sh`.
 
 ### Merging an external corpus
 
-Unlike libvorbis, this specific decoder (the OpenCore/pvmp3 Layer III decoder)
-has **no dedicated upstream OSS-Fuzz project** with a downloadable corpus, so
-there is no project-matched `public.zip` to pull. FFmpeg is on OSS-Fuzz and
-fuzzes MP3, but through its *own* decoder, not this one; its corpus is still raw
-MP3 and the bitstream/container are identical, so it (or any pile of `.mp3`
-files) can be merged as generic seed material:
+FFmpeg is on OSS-Fuzz and fuzzes MP3, but through its own decoder, not this
+one; its corpus is still raw MP3 and the bitstream/container are identical,
+so it (or any pile of `.mp3` files) can be merged as generic seed material:
 
 ```sh
 # point $MP3DIR at any directory of .mp3 files
 ./build-libfuzzer/fuzz_mp3_decode -merge=1 -max_len=65536 corpus_mp3/ "$MP3DIR/"
 ```
 
-`-merge=1` keeps only inputs that add new coverage against *this* harness. If the
+`-merge=1` keeps only inputs that add new coverage against this harness. If the
 merge encounters an input that crashes, libFuzzer writes `crash-<sha>` to the
 cwd, restarts, and continues, so the merge is safe to run on a dirty corpus.
 
@@ -165,13 +161,8 @@ To see which functions the saved corpus exercises across both the wrapper
 
 The script builds a separate `build-cov/` with clang source-based coverage
 instrumentation, replays `corpus_mp3/` once via libFuzzer's `-runs=0` mode, and
-renders the report with `llvm-cov`. The OpenCore decoder is the real
-memory-safety target here, so it stays in the report; only the harness itself is
-excluded. Functions at 0% are codepaths the corpus isn't reaching, candidates
-for new seeds or dict entries. Expect the decoder to never reach 100%: the fork
-carries rate/version/block-type and layer I/II paths that valid MP3 seeds do not
-all hit. To narrow the report to the wrapper alone, set
-`IGNORE_RE='(opencore-mp3dec|tests/fuzz)'`.
+renders the report with `llvm-cov`. To narrow the report to the wrapper alone,
+set `IGNORE_RE='(opencore-mp3dec|tests/fuzz)'`.
 
 ## When a crash is found
 

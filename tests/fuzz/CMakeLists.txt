@@ -25,8 +25,7 @@ endif()
 #                           UB per the C standard but the intended behavior on
 #                           every real target. The standalone battery trips it
 #                           on the first noise frame, so it would bury real
-#                           findings; same rationale and treatment as Tremor's
-#                           MDCT/residue math in micro-vorbis.
+#                           findings.
 #
 # Both are benign-by-design value computations, not memory access, so disabling
 # them does not weaken the memory-safety coverage that matters (OOB indexing,
