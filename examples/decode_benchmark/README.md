@@ -235,19 +235,19 @@ curl -L -o source.flac "https://..."
 # Extract 30 seconds starting at 1:00
 
 # MP3 at 64kbps
-ffmpeg -i source.flac -ss 60 -t 30 -c:a libmp3lame -b:a 64k src/test_audio_mp3_64k.mp3
+ffmpeg -i source.flac -ss 60 -t 30 -c:a libmp3lame -b:a 64k main/test_audio_mp3_64k.mp3
 
 # MP3 at 128kbps
-ffmpeg -i source.flac -ss 60 -t 30 -c:a libmp3lame -b:a 128k src/test_audio_mp3_128k.mp3
+ffmpeg -i source.flac -ss 60 -t 30 -c:a libmp3lame -b:a 128k main/test_audio_mp3_128k.mp3
 
 # MP3 at 320kbps
-ffmpeg -i source.flac -ss 60 -t 30 -c:a libmp3lame -b:a 320k src/test_audio_mp3_320k.mp3
+ffmpeg -i source.flac -ss 60 -t 30 -c:a libmp3lame -b:a 320k main/test_audio_mp3_320k.mp3
 
 # Convert each to a C header (edit variable names to match the existing headers)
-xxd -i src/test_audio_mp3_64k.mp3 > src/test_audio_mp3_64k.h
-xxd -i src/test_audio_mp3_128k.mp3 > src/test_audio_mp3_128k.h
-xxd -i src/test_audio_mp3_320k.mp3 > src/test_audio_mp3_320k.h
-# xxd derives variable names from the path, so rename e.g. src_test_audio_mp3_64k_mp3 → test_audio_mp3_64k
+xxd -i main/test_audio_mp3_64k.mp3 > main/test_audio_mp3_64k.h
+xxd -i main/test_audio_mp3_128k.mp3 > main/test_audio_mp3_128k.h
+xxd -i main/test_audio_mp3_320k.mp3 > main/test_audio_mp3_320k.h
+# xxd derives variable names from the path, so rename e.g. main_test_audio_mp3_64k_mp3 to test_audio_mp3_64k
 ```
 
 Keep clips ~30 seconds to fit in flash.
