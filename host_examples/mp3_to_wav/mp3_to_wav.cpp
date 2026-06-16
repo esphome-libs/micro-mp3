@@ -219,7 +219,7 @@ int main(int argc, char* argv[]) {
                 break;
             }
 
-            stats.total_bytes_read += bytes_read;
+            stats.total_bytes_read += static_cast<size_t>(bytes_read);
 
             if (!decode_chunk(decoder, input_buffer.data(), static_cast<size_t>(bytes_read),
                               pcm_buffer, wav_writer, output_file, stats)) {

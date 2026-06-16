@@ -122,7 +122,7 @@ bool WavWriter::writeSamples(const int16_t* samples, size_t num_samples) {
     size_t bytes_written = fwrite(samples, 1, bytes_to_write, file_);
 
     if (bytes_written == bytes_to_write) {
-        samples_written_ += num_samples;
+        samples_written_ += static_cast<uint32_t>(num_samples);
         return true;
     }
 

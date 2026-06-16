@@ -40,7 +40,12 @@ target_link_libraries(mp3_to_wav PRIVATE
 target_compile_options(mp3_to_wav PRIVATE
     -Wall
     -Wextra
+    -Wpedantic
     -Wshadow
+    -Wconversion
+    -Wsign-conversion
+    -Wdouble-promotion
+    -Wformat=2
     -Wimplicit-fallthrough
     $<$<BOOL:${ENABLE_WERROR}>:-Werror>
 )
