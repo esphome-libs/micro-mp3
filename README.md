@@ -173,6 +173,26 @@ Prefer PSRAM (the default) conserves internal RAM at a slight performance cost. 
 
 Total internal allocation: ~28.8KB (decoder state + input buffer). The PCM output buffer is caller-owned.
 
+## Testing
+
+The wrapper is covered by a ctest suite (`tests/`) that decodes ffmpeg-generated fixtures and checks output against self-consistent references: the stream-info probe contract, chunked streaming at adversarial chunk sizes, decode accuracy, reset and reuse, error codes, corrupt-frame recovery, leading-garbage resync, ID3v2 tag skipping, and gapless (Xing/LAME) trimming.
+
+```bash
+cd tests
+cmake -DENABLE_SANITIZERS=ON -B build && cmake --build build
+(cd build && ctest --output-on-failure)
+```
+
+Fixtures are checked into `tests/data/`; regenerate them with `tests/generate_test_data.sh` (needs ffmpeg with libmp3lame). The host tool can also be run directly under AddressSanitizer and UBSan:
+
+```bash
+cd host_examples/mp3_to_wav
+cmake -DENABLE_SANITIZERS=ON -B build && cmake --build build
+./build/mp3_to_wav input.mp3 output.wav
+```
+
+Add `-DENABLE_WERROR=ON` to either cmake command to treat warnings as errors (off by default). A libFuzzer harness lives in [tests/fuzz/](tests/fuzz/) for fuzzing the streaming decoder; see its README for build and run instructions.
+
 ## License
 
 [Apache License 2.0](LICENSE)
