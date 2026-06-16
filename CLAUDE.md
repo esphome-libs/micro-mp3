@@ -48,7 +48,7 @@ pio run -e esp32-s3 -t upload -t monitor
 - **No AAC+ equivalent** — MP3 is simpler; no SBR or Parametric Stereo handling needed.
 - **ESP32 memory** — uses `heap_caps_malloc_prefer()` with Kconfig-controlled placement (`MP3_DECODER_PREFER_PSRAM`, etc.). Host builds use plain `malloc`.
 - **`pvmp3_decoder.cpp` / `pvmp3_decoder.h` removed** — depended on missing OSCL headers; all required functionality is available through `pvmp3_framedecoder.cpp` and friends. Deleted from the fork (see `src/opencore-mp3dec/CHANGES.md`).
-- **No ARM assembly compiled** — `asm/*.s` excluded; the C equivalent fixed-point routines (`pv_mp3dec_fxd_op_c_equivalent.h`) are used on all platforms. No Xtensa-optimized multiply path (unlike micro-aac).
+- **No ARM assembly** — the non-generic fixed-point back-ends (the ARM/ARM-GCC/MSC-EVC variant headers, the `asm/` folder, and PacketVideo's `make/` fragments) were removed (see `src/opencore-mp3dec/CHANGES.md`). The C-equivalent fixed-point routines, now folded into `pv_mp3dec_fxd_op.h`, are used on all platforms. No Xtensa-optimized multiply path (unlike micro-aac).
 
 ## Configuration (Kconfig)
 

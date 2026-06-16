@@ -234,6 +234,24 @@ unused.
     of going through the `oscl_mem*` aliases. The unused `oscl_malloc` / `oscl_free`
     were dropped.
 
+- **Non-generic fixed-point platforms (`asm/`, `make/`, and the ARM/MSC-EVC
+  variant headers)** -- the decoder shipped three hand-tuned fixed-point
+  back-ends (`pv_mp3dec_fxd_op_arm.h`, `pv_mp3dec_fxd_op_arm_gcc.h`,
+  `pv_mp3dec_fxd_op_msc_evc.h`), the ARMv4/v5 and Windows Mobile assembly in
+  `asm/*.s` / `*.asm`, and PacketVideo's own `make/` build fragments. All of it
+  is gated on the `PV_ARM_V5/V4`, `PV_ARM_GCC_V5/V4`, and `PV_ARM_MSC_EVC_V5/V4`
+  macros, none of which this fork ever defines, so only the C-equivalent path
+  ever compiled and `asm/` was never built. Deleted the variant headers, the
+  `asm/` folder, and the `make/` folder. The portable C-equivalent routines
+  (formerly `pv_mp3dec_fxd_op_c_equivalent.h`) were folded into the dispatcher
+  `pv_mp3dec_fxd_op.h`, which no longer selects on platform; the vestigial
+  `C_EQUIVALENT` define went with it. The in-source `#if defined(PV_ARM_*)`
+  branches that guarded inline assembly were stripped from `pvmp3_dct_16.cpp`,
+  `pvmp3_dct_9.cpp`, `pvmp3_mdct_18.cpp`, `pvmp3_polyphase_filter_window.cpp`
+  / `.h`, and `pvmp3_normalize.cpp` / `.h`, leaving only the C path each already
+  compiled. Decoded output is byte-for-byte identical and all host tests pass;
+  the upstream tarball at the repo root preserves the assembly for provenance.
+
 ## Removed Functions
 
 Dead code surfaced by the libFuzzer coverage report (`tests/fuzz/coverage.sh`):
@@ -251,10 +269,4 @@ audit surface; both removals raised corpus coverage of their files to 100%.
 - **`fxp_mul32_Q26()`** (`pv_mp3dec_fxd_op_c_equivalent.h`,
   `pv_mp3dec_fxd_op_arm.h`, `pv_mp3dec_fxd_op_arm_gcc.h`,
   `pv_mp3dec_fxd_op_msc_evc.h`) -- a Q26 fixed-point multiply helper defined in
-  all four platform-variant headers but invoked by no DSP routine. Removed from
-  every variant to keep the parallel definitions consistent.
-
-## Excluded from Build
-
-- **`asm/*.s`** -- ARM and Windows Mobile assembly. The C-equivalent fixed-point
-  routines in `pv_mp3dec_fxd_op_c_equivalent.h` are used on all platforms.
+  all four platform-variant headers but invoked by no DSP routine.

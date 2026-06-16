@@ -101,18 +101,7 @@ Returns
 ; FUNCTION CODE
 ----------------------------------------------------------------------------*/
 
-#if (defined(PV_ARM_V5)||defined(PV_ARM_V4))
-#elif (defined(PV_ARM_GCC_V5)||defined(PV_ARM_GCC_V4))
-
-
-/* function is inlined in header file */
-
-
-#else
-
 int32 pvmp3_normalize(int32 x)
 {
     return __builtin_clz(x) - 1;
 }
-
-#endif

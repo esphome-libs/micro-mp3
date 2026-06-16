@@ -63,7 +63,6 @@ Returns
 ------------------------------------------------------------------------------
 */
 
-#if ( !defined(PV_ARM_GCC_V5) && !defined(PV_ARM_GCC_V4) && !defined(PV_ARM_V5) && !defined(PV_ARM_V4) )
 /*----------------------------------------------------------------------------
 ; INCLUDES
 ----------------------------------------------------------------------------*/
@@ -285,5 +284,3 @@ void pvmp3_mdct_18(int32 vec[], int32 *history, const int32 *window)
     history[ 6] = fxp_mul32_Q32(tmp,  window[24]);
     history[11] = fxp_mul32_Q32(tmp,  window[29]);
 }
-
-#endif // If not assembly

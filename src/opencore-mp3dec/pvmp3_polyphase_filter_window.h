@@ -87,24 +87,6 @@ extern "C"
 #endif
 
 
-#if (defined(PV_ARM_V5)||defined(PV_ARM_V4))
-
-
-    __inline int16 saturate16(int32 sample)
-    {
-        int32 a;
-        int32 b = 31;
-        __asm
-        {
-            mov   a, sample, asr#15
-            teq a, sample, asr b
-            eorne sample, MAX_16BITS_INT, sample, asr#31
-        }
-        return sample ;
-    }
-
-#else
-
     inline int16 saturate16(int32 sample)
     {
 
@@ -115,7 +97,6 @@ extern "C"
         return sample;
 
     }
-#endif
 
 
     void pvmp3_polyphase_filter_window(int32 *synth_buffer,

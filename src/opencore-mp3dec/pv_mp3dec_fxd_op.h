@@ -24,7 +24,6 @@
 
      Date: 09/21/2007
 
-
 ------------------------------------------------------------------------------
  REVISION HISTORY
 
@@ -33,9 +32,13 @@
 ------------------------------------------------------------------------------
  INCLUDE DESCRIPTION
 
- This file select the associated fixed point functions with the OS/ARCH.
+ Fixed-point multiply/accumulate primitives.
 
-
+ microMP3: upstream dispatched here to one of four platform variants
+ (PV_ARM_V5/V4, PV_ARM_GCC_V5/V4, PV_ARM_MSC_EVC_V5/V4, or the C equivalent)
+ based on build macros that this fork never defines. The non-generic variants
+ and their assembly were dropped and the C-equivalent routines (formerly in
+ pv_mp3dec_fxd_op_c_equivalent.h) folded in here. See CHANGES.md.
 
 ------------------------------------------------------------------------------
 */
@@ -43,42 +46,65 @@
 #ifndef PV_MP3DEC_FXD_OP_H
 #define PV_MP3DEC_FXD_OP_H
 
-#include "pvmp3_audio_type_defs.h"
-
-
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
+#include "pvmp3_audio_type_defs.h"
 
-#if (defined(PV_ARM_V5)||defined(PV_ARM_V4))
+#define Qfmt_31(a)   (Int32)((float)a*0x7FFFFFFF)
+#define Qfmt15(x)   (Int16)(x*((Int32)1<<15) + (x>=0?0.5F:-0.5F))
 
-#include "pv_mp3dec_fxd_op_arm.h"
 
-#elif (defined(PV_ARM_GCC_V5)||defined(PV_ARM_GCC_V4))
+    __inline int32 pv_abs(int32 a)
+    {
+        int32 b = (a < 0) ? -a : a;
+        return b;
+    }
 
-#include "pv_mp3dec_fxd_op_arm_gcc.h"
+    __inline Int32 fxp_mul32_Q30(const Int32 a, const Int32 b)
+    {
+        return (Int32)(((int64)(a) * b) >> 30);
+    }
 
-#elif (defined(PV_ARM_MSC_EVC_V5)||defined(PV_ARM_MSC_EVC_V4))
+    __inline Int32 fxp_mac32_Q30(const Int32 a, const Int32 b, Int32 L_add)
+    {
+        return (L_add + (Int32)(((int64)(a) * b) >> 30));
+    }
 
-#include "pv_mp3dec_fxd_op_msc_evc.h"
+    __inline Int32 fxp_mul32_Q32(const Int32 a, const Int32 b)
+    {
+        return (Int32)(((int64)(a) * b) >> 32);
+    }
 
-#else
+    __inline Int32 fxp_mul32_Q28(const Int32 a, const Int32 b)
+    {
+        return (Int32)(((int64)(a) * b) >> 28);
+    }
 
-#ifndef C_EQUIVALENT
-#define C_EQUIVALENT
-#endif
+    __inline Int32 fxp_mul32_Q27(const Int32 a, const Int32 b)
+    {
+        return (Int32)(((int64)(a) * b) >> 27);
+    }
 
-#include "pv_mp3dec_fxd_op_c_equivalent.h"
+    __inline Int32 fxp_mac32_Q32(Int32 L_add, const Int32 a, const Int32 b)
+    {
+        return (L_add + (Int32)(((int64)(a) * b) >> 32));
+    }
 
-#endif
+    __inline Int32 fxp_msb32_Q32(Int32 L_sub, const Int32 a, const Int32 b)
+    {
+        return (L_sub - ((Int32)(((int64)(a) * b) >> 32)));
+    }
 
+    __inline Int32 fxp_mul32_Q29(const Int32 a, const Int32 b)
+    {
+        return (Int32)(((int64)(a) * b) >> 29);
+    }
 
 #ifdef __cplusplus
 }
 #endif
-
-
 
 #endif  /* PV_MP3DEC_FXD_OP_H */
