@@ -1,11 +1,12 @@
 {
     "name": "microMP3",
     "version": "0.3.0",
-    "description": "Wrapper for the OpenCore MP3 decoder with PSRAM support for MP3 audio decoding",
+    "description": "Streaming MP3 decoder for embedded devices. Fixed-point decoder forked from OpenCore with frame synchronization, PSRAM-aware allocation, and lazy initialization. Supports MPEG 1, 2, and 2.5 Layer III.",
     "authors": [
         {
             "name": "Kevin Ahrendt",
-            "email": "kevin.ahrendt@openhomefoundation.org"
+            "email": "kevin.ahrendt@openhomefoundation.org",
+            "maintainer": true
         }
     ],
     "license": "Apache-2.0",
@@ -14,6 +15,20 @@
         "type": "git",
         "url": "https://github.com/esphome-libs/micro-mp3"
     },
-    "frameworks": "espidf",
-    "platforms": "espressif32"
+    "frameworks": ["espidf"],
+    "platforms": ["espressif32"],
+    "export": {
+        "include": [
+            "src/*",
+            "include/*",
+            "cmake/*",
+            "CMakeLists.txt",
+            "Kconfig",
+            "LICENSE",
+            "NOTICE",
+            "README.md",
+            "library.json",
+            "idf_component.yml"
+        ]
+    }
 }

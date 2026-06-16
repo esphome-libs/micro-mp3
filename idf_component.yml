@@ -2,10 +2,26 @@
 name: "micro-mp3"
 dependencies:
   idf: ">=4.4"
-description: "OpenCore MP3 decoder library for ESP32 - MP3 audio decoding with ESP-IDF support"
+description: "Streaming MP3 decoder for embedded devices. Fixed-point decoder forked from OpenCore with frame synchronization, PSRAM-aware allocation, and lazy initialization. Supports MPEG 1, 2, and 2.5 Layer III."
 license: "Apache-2.0"
 maintainers:
   - Kevin Ahrendt <kevin.ahrendt@openhomefoundation.org>
 version: "0.3.0"
 url: https://github.com/esphome-libs/micro-mp3
 repository: https://github.com/esphome-libs/micro-mp3.git
+files:
+  exclude:
+    - ".cache/**"
+    - ".claude/**"
+    - ".github/**"
+    - ".clang-*"
+    - ".clangd"
+    - ".markdownlint.yaml"
+    - ".pre-commit-config.yaml"
+    - "host_examples/**"
+    - "examples/**"
+    - "tests/**"
+    - "script/**"
+    - "CLAUDE.md"
+    - "compile_commands.json"
+    - "*.mp3"
