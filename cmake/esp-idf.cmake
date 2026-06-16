@@ -26,7 +26,6 @@ function(mp3_configure_esp_idf COMPONENT_LIB COMPONENT_DIR)
     # Private include directories (internal headers)
     target_include_directories(${COMPONENT_LIB} PRIVATE
         "${MP3_SOURCE_DIR}"
-        "${MP3_SOURCE_DIR}/oscl"
     )
 
     # Memory placement via Kconfig

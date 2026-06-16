@@ -43,8 +43,9 @@
 ; INCLUDES
 ----------------------------------------------------------------------------*/
 
+#include <string.h>
+
 #include "pvmp3_audio_type_defs.h"
-#include "oscl_mem.h"
 
 /*----------------------------------------------------------------------------
 ; MACROS
@@ -59,13 +60,16 @@
 ; DEFINES AND SIMPLE TYPEDEF'S
 ----------------------------------------------------------------------------*/
 
+/* These wrap the C library directly. They formerly went through an oscl_*
+ * indirection layer (oscl/oscl_mem.h), which has been collapsed; see
+ * CHANGES.md. */
 
-#define pv_memset(to, c, n)         oscl_memset(to, c, n)
+#define pv_memset(to, c, n)         memset(to, c, n)
 
 
-#define pv_memcpy(to, from, n)      oscl_memcpy(to, from, n)
-#define pv_memmove(to, from, n)     oscl_memmove(to, from, n)
-#define pv_memcmp(p, q, n)          oscl_memcmp(p, q, n)
+#define pv_memcpy(to, from, n)      memcpy(to, from, n)
+#define pv_memmove(to, from, n)     memmove(to, from, n)
+#define pv_memcmp(p, q, n)          memcmp(p, q, n)
 
 /*----------------------------------------------------------------------------
 ; GLOBAL FUNCTION DEFINITIONS

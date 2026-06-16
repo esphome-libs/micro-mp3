@@ -221,6 +221,20 @@ unused.
   is available through `pvmp3_framedecoder.cpp`. Deleted from the fork to keep the
   dead `pvmp3_frame_synch` call site from confusing future audits.
 
+- **`mp3_decoder_selection.h`** -- dead. It defined only `NEW_PV_MP3_DECODER`,
+  which is never referenced, and the header itself was never included. Removed.
+
+- **`oscl/oscl_base.h` / `oscl/oscl_mem.h`** (and the now-empty `oscl/` directory)
+  -- the OSCL compatibility layer had collapsed to two tiny single-consumer headers.
+  Their live contents were inlined into the consumers and the indirection removed:
+  - The fixed-width type aliases (`int8`..`uint64`) and `OSCL_UNUSED_ARG` from
+    `oscl_base.h` moved into `pvmp3_audio_type_defs.h`, its only includer. The
+    unused `OSCL_IMPORT_REF` / `OSCL_EXPORT_REF` macros were dropped.
+  - The `pv_mem*` macros in `mp3_mem_funcs.h` (its only includer) now expand
+    directly to the C library `memset` / `memcpy` / `memmove` / `memcmp` instead
+    of going through the `oscl_mem*` aliases. The unused `oscl_malloc` / `oscl_free`
+    were dropped.
+
 ## Excluded from Build
 
 - **`asm/*.s`** -- ARM and Windows Mobile assembly. The C-equivalent fixed-point
