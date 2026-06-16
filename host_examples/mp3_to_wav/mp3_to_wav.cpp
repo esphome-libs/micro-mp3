@@ -77,7 +77,7 @@ bool try_initialize_wav_writer(std::unique_ptr<WavWriter>& wav_writer,
 
     wav_writer = std::make_unique<WavWriter>(output_file, sample_rate, channels, 16);
 
-    if (!wav_writer->isOpen()) {
+    if (!wav_writer->is_open()) {
         std::cerr << "Error: Could not create output file: " << output_file << "\n";
         return false;
     }
@@ -146,7 +146,7 @@ bool decode_chunk(micro_mp3::Mp3Decoder& decoder, const uint8_t* data, size_t da
             stats.total_packets++;
 
             if (wav_writer) {
-                if (!wav_writer->writeSamples(pcm_buffer.data(), samples)) {
+                if (!wav_writer->write_samples(pcm_buffer.data(), samples)) {
                     std::cerr << "Error: Failed to write samples to WAV file\n";
                     return false;
                 }
@@ -174,8 +174,9 @@ void print_stats(const DecodeStats& stats, const WavWriter& wav_writer, uint32_t
     if (stats.decode_errors > 0) {
         std::cout << "Corrupt frames skipped: " << stats.decode_errors << "\n";
     }
-    std::cout << "Total samples written: " << wav_writer.getSamplesWritten() << "\n";
-    std::cout << "Duration: " << (wav_writer.getSamplesWritten() / static_cast<double>(sample_rate))
+    std::cout << "Total samples written: " << wav_writer.get_samples_written() << "\n";
+    std::cout << "Duration: "
+              << (wav_writer.get_samples_written() / static_cast<double>(sample_rate))
               << " seconds\n";
 }
 

@@ -12,75 +12,90 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/* Simple WAV File Writer
- * Supports PCM audio in standard RIFF/WAVE format
- */
+/// @file
+/// @brief Simple WAV file writer for PCM audio in RIFF/WAVE format
 
-#ifndef WAV_WRITER_H
-#define WAV_WRITER_H
+#pragma once
 
 #include <cstdint>
 #include <cstdio>
 #include <string>
 
+/// @brief Writes int16_t PCM samples to a standard RIFF/WAVE file
+///
+/// The header is written on construction with placeholder sizes and rewritten
+/// with the final byte counts on destruction, so the writer can stream samples
+/// without knowing the total length in advance.
 class WavWriter {
 public:
-    /**
-     * @brief Construct a new WAV Writer
-     *
-     * @param filename Output WAV file path
-     * @param sample_rate Sample rate in Hz
-     * @param num_channels Number of channels (1=mono, 2=stereo)
-     * @param bits_per_sample Bits per sample (typically 16)
-     */
+    // ========================================
+    // Lifecycle
+    // ========================================
+
+    /// @brief Construct a new WAV writer and open the output file
+    /// @param filename Output WAV file path
+    /// @param sample_rate Sample rate in Hz
+    /// @param num_channels Number of channels (1 = mono, 2 = stereo)
+    /// @param bits_per_sample Bits per sample (typically 16)
     WavWriter(const std::string& filename, uint32_t sample_rate, uint16_t num_channels,
               uint16_t bits_per_sample = 16);
 
-    /**
-     * @brief Destroy the WAV Writer and finalize the file
-     */
+    /// @brief Destroy the WAV writer and finalize the file
     ~WavWriter();
 
-    /**
-     * @brief Write PCM samples to the WAV file
-     *
-     * @param samples Pointer to PCM samples (int16_t array)
-     * @param num_samples Number of samples (per channel)
-     * @return true if successful, false on error
-     */
-    bool writeSamples(const int16_t* samples, size_t num_samples);
-
-    /**
-     * @brief Check if the WAV file is open and ready
-     *
-     * @return true if file is open
-     */
-    bool isOpen() const {
-        return file_ != nullptr;
-    }
-
-    /**
-     * @brief Get the total number of samples written
-     *
-     * @return Total samples written (per channel)
-     */
-    uint32_t getSamplesWritten() const {
-        return samples_written_;
-    }
-
-private:
-    // Disable copy and assignment
+    // Non-copyable
     WavWriter(const WavWriter&) = delete;
     WavWriter& operator=(const WavWriter&) = delete;
 
-    void writeHeader();
-    void updateHeader();
+    // ========================================
+    // Core API
+    // ========================================
 
-    FILE* file_;
-    uint32_t sample_rate_;
-    uint16_t num_channels_;
-    uint16_t bits_per_sample_;
-    uint32_t samples_written_;
+    /// @brief Write PCM samples to the WAV file
+    /// @param samples Pointer to interleaved PCM samples (int16_t array)
+    /// @param num_samples Number of samples per channel
+    /// @return true on success, false on write error
+    bool write_samples(const int16_t* samples, size_t num_samples);
+
+    // ========================================
+    // Accessors
+    // ========================================
+
+    /// @brief Check whether the output file is open and ready
+    /// @return true if the file is open
+    bool is_open() const {
+        return this->file_ != nullptr;
+    }
+
+    /// @brief Get the total number of samples written
+    /// @return Total samples written per channel
+    uint32_t get_samples_written() const {
+        return this->samples_written_;
+    }
+
+private:
+    // ========================================
+    // Internal Helpers
+    // ========================================
+
+    /// @brief Write the RIFF/WAVE header with placeholder sizes
+    void write_header();
+
+    /// @brief Rewrite the header with the final RIFF and data chunk sizes
+    void update_header();
+
+    // ========================================
+    // Member Variables
+    // ========================================
+
+    // Pointer fields
+    FILE* file_;  // Output file handle, nullptr when not open
+
+    // 32-bit fields
+    uint32_t sample_rate_;         // Sample rate in Hz
+    uint32_t samples_written_{0};  // Total samples written per channel
+
+    // 16-bit fields
+    uint16_t bits_per_sample_;  // Bits per sample
+    uint16_t num_channels_;     // Number of channels
 };
-
-#endif  // WAV_WRITER_H
