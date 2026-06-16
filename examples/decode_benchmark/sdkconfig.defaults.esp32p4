@@ -1,0 +1,10 @@
+# ESP32-P4 specific settings
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# CPU Frequency
+# P4 runs faster than the S3/ESP32; 360 MHz suits the pre-rev.300 eval board.
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_360=y
+
+# Hex (16-line) PSRAM at 200 MHz
+CONFIG_SPIRAM_MODE_HEX=y
+CONFIG_SPIRAM_SPEED_200M=y
