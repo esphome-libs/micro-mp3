@@ -54,10 +54,12 @@ Checks: >
 
 WarningsAsErrors: '*'
 
-# Lint first-party headers under include/ and the top level of src/. The
-# src/[^/]* term deliberately stops at the first path segment so the vendored
-# OpenCore headers in src/opencore-mp3dec/ are not linted.
-HeaderFilterRegex: '(include/micro_mp3/.*|src/[^/]*)\.h$'
+# Lint first-party headers under include/, the top level of src/, and the host
+# example sources. The src/[^/]* term deliberately stops at the first path
+# segment so the vendored OpenCore headers in src/opencore-mp3dec/ are not
+# linted; the host_examples/[^/]+/[^/]+ term stops at depth two so build-tree
+# generated headers under host_examples/*/build*/ are not linted.
+HeaderFilterRegex: '(include/micro_mp3/.*|src/[^/]*|host_examples/[^/]+/[^/]+)\.h$'
 
 CheckOptions:
   # Naming conventions matching existing code style
