@@ -1,0 +1,14 @@
+# Backward-compatible Kconfig renames for existing sdkconfig files.
+# Format: CONFIG_DEPRECATED_OPTION CONFIG_NEW_OPTION
+# The MP3_* / MP3_DECODER_* prefixes were renamed to MICRO_MP3_* in v0.3.0
+# for namespace consistency with the rest of the micro-* library family.
+#
+# These aliases are a temporary migration aid, not a supported interface, and
+# are planned for removal in v1.0.0. After upgrading, run a build once so the
+# new MICRO_MP3_* names are written into your sdkconfig before then.
+
+CONFIG_MP3_COMPONENT                CONFIG_MICRO_MP3_COMPONENT
+CONFIG_MP3_DECODER_PREFER_PSRAM     CONFIG_MICRO_MP3_PREFER_PSRAM
+CONFIG_MP3_DECODER_PREFER_INTERNAL  CONFIG_MICRO_MP3_PREFER_INTERNAL
+CONFIG_MP3_DECODER_PSRAM_ONLY       CONFIG_MICRO_MP3_PSRAM_ONLY
+CONFIG_MP3_DECODER_INTERNAL_ONLY    CONFIG_MICRO_MP3_INTERNAL_ONLY

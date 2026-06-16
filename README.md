@@ -147,7 +147,7 @@ decoder.set_equalizer(micro_mp3::MP3_EQ_FLAT);
 
 ```bash
 idf.py menuconfig
-# Navigate to: Component config → MP3 Decoder
+# Navigate to: Component config, microMP3 Decoder
 ```
 
 ### Memory Placement
@@ -156,10 +156,10 @@ Decoder state memory can be configured with four placement options:
 
 | Option | Default | Description |
 | ------ | ------- | ----------- |
-| `CONFIG_MP3_DECODER_PREFER_PSRAM` | y | Try PSRAM first, fall back to internal RAM |
-| `CONFIG_MP3_DECODER_PREFER_INTERNAL` | | Try internal RAM first, fall back to PSRAM |
-| `CONFIG_MP3_DECODER_PSRAM_ONLY` | | Strict PSRAM; fails if unavailable |
-| `CONFIG_MP3_DECODER_INTERNAL_ONLY` | | Never use PSRAM |
+| `CONFIG_MICRO_MP3_PREFER_PSRAM` | y | Try PSRAM first, fall back to internal RAM |
+| `CONFIG_MICRO_MP3_PREFER_INTERNAL` | | Try internal RAM first, fall back to PSRAM |
+| `CONFIG_MICRO_MP3_PSRAM_ONLY` | | Strict PSRAM; fails if unavailable |
+| `CONFIG_MICRO_MP3_INTERNAL_ONLY` | | Never use PSRAM |
 
 Prefer PSRAM (the default) conserves internal RAM at a slight performance cost. Prefer internal RAM for better decode throughput when RAM is plentiful.
 

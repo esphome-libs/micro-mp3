@@ -24,6 +24,7 @@
             "cmake/*",
             "CMakeLists.txt",
             "Kconfig",
+            "sdkconfig.rename",
             "LICENSE",
             "NOTICE",
             "README.md",

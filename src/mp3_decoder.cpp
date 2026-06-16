@@ -40,15 +40,15 @@ namespace {
 
 void* mp3_malloc(size_t size) {
 #ifdef ESP_PLATFORM
-#if defined(MP3_DECODER_PREFER_PSRAM)
+#if defined(MICRO_MP3_PREFER_PSRAM)
     return heap_caps_malloc_prefer(size, 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
                                    MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-#elif defined(MP3_DECODER_PREFER_INTERNAL)
+#elif defined(MICRO_MP3_PREFER_INTERNAL)
     return heap_caps_malloc_prefer(size, 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT,
                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-#elif defined(MP3_DECODER_PSRAM_ONLY)
+#elif defined(MICRO_MP3_PSRAM_ONLY)
     return heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-#elif defined(MP3_DECODER_INTERNAL_ONLY)
+#elif defined(MICRO_MP3_INTERNAL_ONLY)
     return heap_caps_malloc(size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 #else
     // Default: prefer PSRAM with fallback to internal RAM

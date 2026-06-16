@@ -64,7 +64,7 @@ build_flags = -DDECODE_BENCH_MAX_CONCURRENT_TASKS=1
 idf.py menuconfig
 ```
 
-Navigate to **Component config → MP3 Decoder** to adjust:
+Navigate to **Component config → microMP3 Decoder** to adjust:
 
 - Memory placement (PSRAM vs internal RAM for decoder state)
 
