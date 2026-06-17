@@ -23,7 +23,6 @@ function(mp3_get_sources)
     set(MP3_DIR "${_MP3_OPENCORE_DIR}")
     # --------------------------------------------------------------------------
     # OpenCore MP3 decoder sources
-    # (asm/*.s excluded: ARM assembly not needed for generic builds)
     # --------------------------------------------------------------------------
     set(MP3_LIB_SOURCES
         ${MP3_DIR}/pvmp3_alias_reduction.cpp
