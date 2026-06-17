@@ -1,29 +1,38 @@
-# micro-mp3 - Claude Development Guide
+# microMP3: Claude Development Guide
 
-ESP-IDF component wrapping the OpenCore MP3 decoder (MPEG 1/2/2.5 Layer III). Fixed-point C++ library, Apache 2.0.
+ESP-IDF component wrapping a forked OpenCore MP3 decoder (fixed-point MPEG 1/2/2.5 Layer III) with PSRAM-aware allocation, lazy init, built-in frame synchronization, gapless trimming, and selectable EQ presets. Apache 2.0.
 
-## Project Structure
+## Documentation Map
+
+- [README.md](README.md) - Public API, usage example, Kconfig options, EQ presets, return codes, performance and memory numbers
+- [src/opencore-mp3dec/CHANGES.md](src/opencore-mp3dec/CHANGES.md) - File-by-file changelog of the OpenCore fork vs upstream
+
+## Layout
 
 ```text
-src/opencore-mp3dec/     # Forked OpenCore MP3 decoder source (see CHANGES.md)
-src/mp3_decoder.cpp      # Mp3Decoder C++ wrapper
-cmake/                   # Build system modules
-include/micro_mp3/       # Public API (mp3_decoder.h)
-examples/                # ESP-IDF decode_benchmark
-host_examples/           # Host tools (mp3_to_wav)
+src/opencore-mp3dec/        # Forked OpenCore MP3 decoder, modified in place (no submodule, no patches)
+src/mp3_decoder.cpp         # Mp3Decoder C++ wrapper (frame sync, probe, ID3v2 skip, gapless trim)
+include/micro_mp3/          # Public API header (mp3_decoder.h)
+cmake/                      # Build modules (source lists, host and ESP-IDF configuration)
+examples/decode_benchmark/  # ESP32 benchmark example (esp32, esp32s3, esp32p4)
+host_examples/mp3_to_wav/   # mp3_to_wav CLI decoder
+tests/                      # Mp3Decoder unit tests (ctest; fixtures in tests/data/)
+tests/fuzz/                 # libFuzzer harness (self-contained CMake project, not part of ctest)
+script/clang-tidy.sh        # Lint wrapper (uses the mp3_to_wav build's compile_commands.json)
 ```
 
-## Build Commands
+## Build and Test
 
-### Host (macOS/Linux)
+### ESP32 (PlatformIO)
 
 ```bash
-cd host_examples/mp3_to_wav
-mkdir build && cd build && cmake .. && make
-./mp3_to_wav input.mp3 output.wav
+cd examples/decode_benchmark
+pio run -e esp32s3                       # build (also: -e esp32, -e esp32p4)
+pio run -e esp32s3 -t upload -t monitor  # flash and watch benchmark output
+pio run -e esp32s3 -t menuconfig         # Component config, microMP3 Decoder
 ```
 
-### ESP-IDF
+### ESP32 (ESP-IDF)
 
 ```bash
 cd examples/decode_benchmark
@@ -31,41 +40,34 @@ idf.py set-target esp32s3
 idf.py build flash monitor
 ```
 
-### PlatformIO
+### Host (macOS/Linux)
 
 ```bash
-cd examples/decode_benchmark
-pio run -e esp32-s3 -t upload -t monitor
+cd host_examples/mp3_to_wav
+cmake -DENABLE_SANITIZERS=ON -B build && cmake --build build
+./build/mp3_to_wav input.mp3 output.wav
 ```
 
-## Key Architecture
+### Unit tests
 
-- **Forked decoder** — `src/opencore-mp3dec/` is a fork of the OpenCore MP3 decoder. Changes from upstream are documented in `src/opencore-mp3dec/CHANGES.md`. The original upstream tarball is preserved at the repo root as a provenance reference. Changes can be made directly to the forked source.
-- **No ADTS parsing** — MP3 has its own sync word (`0xFF 0xEx`); `Mp3Decoder` handles frame synchronization internally via `parse_mp3_frame_header()`. No separate container demuxer needed.
-- **Lazy initialization** — `Mp3Decoder` allocates on first `decode()` call. Constructor always succeeds.
-- **Header-only probe** — first `decode()` call returns `MP3_STREAM_INFO_READY` (2) after parsing the MP3 frame header (no audio decoded). Stream properties (`sample_rate_`, `output_channels_`, `bitrate_`) are set from the 4-byte header. The probe does **not** consume the frame body: `bytes_consumed` is 0 when the header was parsed in place (fast path), or a small value (≤ 3) when the header was completed from internal buffering (slow path). ID3v2 tag bytes and resync skip bytes are reported via separate `MP3_NEED_MORE_DATA` returns, not as part of `MP3_STREAM_INFO_READY`. Caller advances by `bytes_consumed`, sets up their audio pipeline, then calls `decode()` again — the first frame is decoded zero-copy from the caller's buffer (fast path) or pulled from the internal buffer + caller input (slow path); a leading Xing/Info header frame is skipped at this step rather than decoded (see Gapless trimming). Because the frame body stays in the caller's buffer, "input empty" remains a valid EOS signal even for single-frame files.
-- **Gapless trimming** — transparent (no public API beyond `decode()`). The leading Xing/Info header frame is detected and skipped without decoding by `record_vbr_header_frame()` (which parses the tag via `parse_vbr_header()`). Start trim drops `encoder_delay + 529` samples per channel (529 = 528+1 filterbank delay; `encoder_delay` is read from the LAME-style extension at its fixed offset like ffmpeg, so non-LAME encoders such as Lavc also work). End trim caps total emitted samples at `frames * samples_per_frame - encoder_delay - padding` using the Xing frame count, so no end-of-stream signal is needed. Falls back to no end trim when the frame count is absent, and no trimming at all without a Xing/Info header.
-- **No AAC+ equivalent** — MP3 is simpler; no SBR or Parametric Stereo handling needed.
-- **ESP32 memory** — uses `heap_caps_malloc_prefer()` with Kconfig-controlled placement (`MICRO_MP3_PREFER_PSRAM`, etc.). Host builds use plain `malloc`.
-- **`pvmp3_decoder.cpp` / `pvmp3_decoder.h` removed** — depended on missing OSCL headers; all required functionality is available through `pvmp3_framedecoder.cpp` and friends. Deleted from the fork (see `src/opencore-mp3dec/CHANGES.md`).
-- **No ARM assembly** — the non-generic fixed-point back-ends (the ARM/ARM-GCC/MSC-EVC variant headers, the `asm/` folder, and PacketVideo's `make/` fragments) were removed (see `src/opencore-mp3dec/CHANGES.md`). The C-equivalent fixed-point routines, now folded into `pv_mp3dec_fxd_op.h`, are used on all platforms. No Xtensa-optimized multiply path (unlike micro-aac).
+```bash
+cd tests
+cmake -DENABLE_SANITIZERS=ON -B build && cmake --build build
+ctest --test-dir build --output-on-failure
+```
 
-## Configuration (Kconfig)
+Fixtures are checked into `tests/data/`; regenerate with `tests/generate_test_data.sh` (needs ffmpeg with libmp3lame). Most tests use the all-at-once full-buffer decode of a fixture as a self-consistency reference that streamed and modified-input decodes must match; `decode_accuracy` additionally checks recovered tone power with a Goertzel filter.
 
-Memory placement only — no feature flags (no AAC_PLUS/HQ_SBR/PARAMETRIC_STEREO equivalents):
+Add `-DENABLE_WERROR=ON` to the host or test cmake command to treat warnings as errors (off by default). With `ENABLE_SANITIZERS=ON` the build disables only UBSan's `shift-base` check. The OpenCore DSP intentionally left-shifts negatives in ~100 documented places; all other checks stay live.
 
-- `CONFIG_MICRO_MP3_PREFER_PSRAM` — Try PSRAM first, fall back to internal RAM (requires `SPIRAM`; default when `SPIRAM` is enabled)
-- `CONFIG_MICRO_MP3_PREFER_INTERNAL` — Try internal RAM first, fall back to PSRAM (requires `SPIRAM`)
-- `CONFIG_MICRO_MP3_PSRAM_ONLY` — Strict PSRAM; fails if unavailable (requires `SPIRAM`)
-- `CONFIG_MICRO_MP3_INTERNAL_ONLY` — Never use PSRAM (default when `SPIRAM` is disabled)
+## Working Notes
 
-## Things to Watch Out For
-
-- **Output buffer sizing** — MP3 frames need up to 4608 bytes (1152 samples × 2ch × 2 bytes for MPEG1 stereo). Use the constant `MP3_MIN_OUTPUT_BUFFER_BYTES` or `get_min_output_buffer_bytes()`; pass the constant, not `sizeof(pointer)`. MPEG2/2.5 produce 576 samples per channel but the buffer must always accommodate the MPEG1 worst case.
-- **FreeRTOS stack** — heap-allocate PCM buffers in tasks; 4608-byte buffers on the stack risk stack overflow.
-- **Fixed-point only** — C equivalent used on all platforms. No Xtensa `mulsh` optimizations (unlike micro-aac); expect lower performance on Xtensa than AAC-LC.
-- **`get_bitrate()` returns kbps** — e.g., 128 for 128 kbps. The OpenCore `mp3_bitrate` table stores values in kbps and `tPVMP3DecoderExternal.bitRate` is set directly from it. May vary frame to frame for VBR streams.
-- **`samples_decoded` is per-channel** — for stereo, `samples_decoded == 1152` means 1152 × 2 = 2304 total `int16_t` values in the output buffer.
-- **`MP3_STREAM_INFO_READY` on first call** — always check for this return code. `samples_decoded` will be 0 on this call; actual PCM output begins on the next successful `decode()`.
-- **`MP3_DECODE_ERROR` is recoverable** — advance input by `bytes_consumed` and continue; the wrapper already skipped the bad frame.
-- **Zero-copy direct path** — when a complete frame is available without leftover buffered data, `decode_direct()` passes the caller's buffer pointer directly to OpenCore (no memcpy). Keep input data alive for the duration of the decode call.
+- Edit OpenCore files directly in `src/opencore-mp3dec/` - there is no staging or patching step. Record any upstream divergence in `src/opencore-mp3dec/CHANGES.md`.
+- Fixed-point only, C equivalent on all platforms. No Xtensa `mulsh` path (unlike micro-aac); expect lower throughput on Xtensa than AAC-LC. Watch for integer overflow when touching the DSP.
+- `Mp3Decoder` allocates lazily on the first `decode()`; the constructor always succeeds. The first `decode()` returns `MP3_STREAM_INFO_READY` (2) with `samples_decoded == 0` - read `get_sample_rate()`/`get_channels()`/`get_bitrate()`, then call again for PCM. Always check for this code.
+- `MP3_DECODE_ERROR` is recoverable: advance input by `bytes_consumed` and keep going (the wrapper already skipped the bad frame). Only `result < 0` other than that is fatal.
+- Output buffer must always fit the MPEG1 worst case (1152 samples x 2ch x 2 bytes = 4608). Pass `MP3_MIN_OUTPUT_BUFFER_BYTES` / `get_min_output_buffer_bytes()`, never `sizeof(pointer)`. MPEG2/2.5 emit 576 samples/channel but the buffer requirement does not shrink.
+- `samples_decoded` is per channel: stereo `1152` means 2304 `int16_t` written. `get_bitrate()` is kbps and may vary per frame on VBR.
+- In FreeRTOS tasks, heap-allocate PCM buffers - a 4608-byte buffer on the stack risks overflow.
+- Zero-copy direct path: when a full frame is available with no buffered leftover, `decode_direct()` hands the caller's pointer straight to OpenCore (no memcpy). Keep the input alive for the duration of the call.
+- Decoder state plus PSRAM-aware placement is Kconfig-controlled (`MICRO_MP3_PREFER_PSRAM` and friends; see README/Kconfig). Memory placement is the only configuration - there are no feature flags. Host builds use plain `malloc`.
