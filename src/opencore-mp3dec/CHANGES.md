@@ -29,12 +29,11 @@ A side-info bounds guard in `pvmp3_framedecoder()`, plus two fixes in
    guard. Found by libFuzzer + ASan.
 2. In `fillMainDataBuf()`, the input-side read is clamped to
    `inputBufferCurrentLength - offset`. Upstream bounds-checks only against
-   `BUFSIZE` (8192; 2048 in this fork, see below), which assumes the caller
-   supplies a `BUFSIZE`-byte circular buffer. The wrapper instead passes a
-   caller-owned slice or the 1536-byte internal buffer, so `BUFSIZE` overcommits
-   and malformed side-info can drive `offset + temp` past the allocation.
-   Out-of-range data now produces a downstream parse error, reported as
-   `MP3_DECODE_ERROR`.
+   `BUFSIZE` (8192), which assumes the caller supplies an 8192-byte circular
+   buffer. The wrapper instead passes a caller-owned slice or the 1536-byte
+   internal buffer, so `BUFSIZE` overcommits and malformed side-info can drive
+   `offset + temp` past the allocation. Out-of-range data now produces a
+   downstream parse error, reported as `MP3_DECODE_ERROR`.
 3. The unrolled fallback loop in `fillMainDataBuf()` (taken when the main-data
    buffer wraps at `BUFSIZE`) read one byte past `temp`: it pre-read a byte
    before the loop and re-read one at the end of every iteration. It now reads
