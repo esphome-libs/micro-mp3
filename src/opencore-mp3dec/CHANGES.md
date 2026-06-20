@@ -34,12 +34,18 @@ A side-info bounds guard in `pvmp3_framedecoder()`, plus two fixes in
    caller-owned slice or the 1536-byte internal buffer, so `BUFSIZE` overcommits
    and malformed side-info can drive `offset + temp` past the allocation.
    Out-of-range data now produces a downstream parse error, reported as
-   `MP3_DECODE_ERROR`.
+   `MP3_DECODE_ERROR`. With that clamp in place, and the wrapper never setting
+   `inputBufferCurrentLength` above 1536 (or a single <= 1441-byte frame),
+   `offset + temp < BUFSIZE` always holds, so upstream's branch that treated the
+   *input* buffer as circular (wrapping reads at `BUFSIZE`) was dead and wrong
+   for a flat slice; it is removed, leaving the single linear read.
 3. The wrap path in `fillMainDataBuf()` (taken when the main-data ring wraps at
    `BUFSIZE`) is two bulk `pv_memcpy` calls, one per side of the wrap. Upstream's
    unrolled two-at-a-time loop pre-read a byte before the loop and re-read one at
    the end of every iteration, reading one byte past `temp`; the split copy
-   reads exactly `temp` bytes.
+   reads exactly `temp` bytes. The `pv_memcpy` rewrites in (2) and (3) leave the
+   `fillDataBuf()` single-byte ring-write helper with no callers, so it is
+   removed.
 
 ### `pvmp3_dec_defs.h`
 

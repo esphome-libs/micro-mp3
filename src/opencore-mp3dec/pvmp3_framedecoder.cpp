@@ -591,13 +591,6 @@ ERROR_CODE pvmp3_framedecoder(tPVMP3DecoderExternal *pExt,
 ; FUNCTION CODE
 ----------------------------------------------------------------------------*/
 
-__inline void fillDataBuf(tmp3Bits *pMainData,
-                          uint32 val)       /* val to write into the buffer */
-{
-    pMainData->pBuffer[module(pMainData->offset++, BUFSIZE)] = (uint8)val;
-}
-
-
 void fillMainDataBuf(void  *pMem, int32 temp)
 {
     tmp3dec_file   *pVars = (tmp3dec_file *)pMem;
@@ -629,63 +622,50 @@ void fillMainDataBuf(void  *pMem, int32 temp)
     }
 
     /*
-     *  Check if input circular buffer boundaries need to be enforced
-     *
-     *  microMP3 NOTE: the clamp above ensures temp <= avail - offset, and
-     *  the wrapper never sets inputBufferCurrentLength larger than
-     *  MP3_INPUT_BUFFER_SIZE (1536), still below BUFSIZE (2048). So
-     *  (offset + temp) < BUFSIZE always holds in practice and the `else`
-     *  branch below is dead. Kept intact to preserve upstream pvmp3
-     *  semantics in case the wrapper assumption ever changes.
+     *  microMP3 NOTE: upstream wrapped the *input*-buffer read at BUFSIZE here,
+     *  assuming the caller supplied a BUFSIZE-byte circular buffer. The
+     *  micro-mp3 wrapper instead hands pvmp3 a flat, non-circular slice: the
+     *  clamp above bounds temp to inputBufferCurrentLength - offset, and the
+     *  wrapper never sets inputBufferCurrentLength above MP3_INPUT_BUFFER_SIZE
+     *  (1536) or one frame (<= 1441), both below BUFSIZE (2048). So
+     *  (offset + temp) < BUFSIZE always holds and the input read never wraps.
+     *  The upstream input-wrapping branch was therefore dead -- and wrong for a
+     *  flat buffer anyway -- so it is removed. The main-data ring still wraps,
+     *  handled below.
+     */
+    uint8 * ptr = pVars->inputStream.pBuffer + offset;
+
+    offset = pVars->mainDataStream.offset;
+
+    /*
+     *  Check if main data circular buffer boundaries need to be enforced
      */
     if ((offset + temp) < BUFSIZE)
     {
-        uint8 * ptr = pVars->inputStream.pBuffer + offset;
-
-        offset = pVars->mainDataStream.offset;
-
-        /*
-         *  Check if main data circular buffer boundaries need to be enforced
-         */
-        if ((offset + temp) < BUFSIZE)
-        {
-            pv_memcpy((pVars->mainDataStream.pBuffer + offset), ptr, temp*sizeof(uint8));
-            pVars->mainDataStream.offset += temp;
-        }
-        else
-        {
-            /*
-             * The main-data ring wraps within this copy. Since the source
-             * ptr[0..temp-1] is contiguous and temp < BUFSIZE, the write spans
-             * the ring at most once: copy the tail of the ring, then the part
-             * that wraps to the front. Two bulk copies of exactly `temp` source
-             * bytes total. With BUFSIZE = 2048 this wrap is common, so keeping
-             * it a memcpy (rather than a byte loop) matters.
-             *
-             * microMP3 FIX: upstream's unrolled two-at-a-time loop pre-read a
-             * byte before the loop and re-read at the end of every iteration, so
-             * the tail iteration read one byte past `temp`. Valid streams left
-             * trailing input slack so it went unnoticed; libFuzzer + ASan caught
-             * it when a frame ended at the caller's allocation. The split copy
-             * keeps the read bounded to exactly `temp`.
-             */
-            int32 first = BUFSIZE - offset;  /* bytes from offset to the ring end */
-            pv_memcpy(pVars->mainDataStream.pBuffer + offset, ptr, first * sizeof(uint8));
-            pv_memcpy(pVars->mainDataStream.pBuffer, ptr + first, (temp - first) * sizeof(uint8));
-            pVars->mainDataStream.offset = module(offset + temp, BUFSIZE);
-        }
+        pv_memcpy((pVars->mainDataStream.pBuffer + offset), ptr, temp*sizeof(uint8));
+        pVars->mainDataStream.offset += temp;
     }
     else
     {
-        for (int32 nBytes = temp >> 1; nBytes != 0; nBytes--)  /* read main data. */
-        {
-            fillDataBuf(&pVars->mainDataStream, *(pVars->inputStream.pBuffer + module(offset++  , BUFSIZE)));
-            fillDataBuf(&pVars->mainDataStream, *(pVars->inputStream.pBuffer + module(offset++  , BUFSIZE)));
-        }
-        if (temp&1)
-        {
-            fillDataBuf(&pVars->mainDataStream, *(pVars->inputStream.pBuffer + module(offset  , BUFSIZE)));
-        }
+        /*
+         * The main-data ring wraps within this copy. Since the source
+         * ptr[0..temp-1] is contiguous and temp < BUFSIZE, the write spans
+         * the ring at most once: copy the tail of the ring, then the part
+         * that wraps to the front. Two bulk copies of exactly `temp` source
+         * bytes total. With BUFSIZE = 2048 this wrap is common, so keeping
+         * it a memcpy (rather than a byte loop) matters.
+         *
+         * microMP3 FIX: upstream's unrolled two-at-a-time loop pre-read a
+         * byte before the loop and re-read at the end of every iteration, so
+         * the tail iteration read one byte past `temp`. Valid streams left
+         * trailing input slack so it went unnoticed; libFuzzer + ASan caught
+         * it when a frame ended at the caller's allocation. The split copy
+         * keeps the read bounded to exactly `temp`.
+         */
+        int32 first = BUFSIZE - offset;  /* bytes from offset to the ring end */
+        pv_memcpy(pVars->mainDataStream.pBuffer + offset, ptr, first * sizeof(uint8));
+        pv_memcpy(pVars->mainDataStream.pBuffer, ptr + first, (temp - first) * sizeof(uint8));
+        pVars->mainDataStream.offset = module(offset + temp, BUFSIZE);
     }
 
 
