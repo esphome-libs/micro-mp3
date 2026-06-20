@@ -6,11 +6,23 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Manual "Run workflow" from the Actions tab.
+  workflow_dispatch:
+
+# Least privilege: every job here only reads the repo (checkout, build, test, cache). Jobs that
+# need more should add a narrower job-level permissions block rather than widening this default.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   pre-commit:
     name: Pre-commit checks
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -23,6 +35,7 @@ jobs:
   lint:
     name: Static analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -37,6 +50,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -49,6 +63,7 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -64,6 +79,7 @@ jobs:
   fuzz:
     name: Fuzz build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -93,6 +109,7 @@ jobs:
   platformio:
     name: PlatformIO Build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -115,3 +132,29 @@ jobs:
 
       - name: Build decode_benchmark
         run: pio run -d examples/decode_benchmark
+
+  # Single aggregating status for branch protection: require only "CI success" instead of every job.
+  # always() so it reports even when a job fails; skipped dependencies are treated as passing (only
+  # failure/cancelled blocks).
+  ci-success:
+    name: CI success
+    if: always()
+    needs:
+      - pre-commit
+      - lint
+      - build
+      - test
+      - fuzz
+      - platformio
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail if any required job failed or was cancelled
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          echo "One or more CI jobs failed or were cancelled:"
+          echo '${{ toJSON(needs) }}'
+          exit 1
+
+      - name: Report success
+        run: echo "All required CI jobs passed (skipped jobs are allowed)."
