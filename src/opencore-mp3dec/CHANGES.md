@@ -9,18 +9,35 @@ diff against the upstream tree linked above.
 
 ### `pvmp3_framedecoder.cpp`
 
-Two fixes in `fillMainDataBuf()`:
+A side-info bounds guard in `pvmp3_framedecoder()`, plus two fixes in
+`fillMainDataBuf()`:
 
-1. The input-side read is clamped to `inputBufferCurrentLength - offset`.
-   Upstream bounds-checks only against `BUFSIZE` (8192), which assumes the caller
-   supplies an 8192-byte circular buffer. The wrapper instead passes a
-   caller-owned slice or the 1536-byte internal buffer, so `BUFSIZE` overcommits
-   and malformed side-info can drive `offset + temp` past the allocation.
-   Out-of-range data now produces a downstream parse error, reported as
-   `MP3_DECODE_ERROR`.
-2. The unrolled fallback loop (taken when the main-data buffer wraps at
-   `BUFSIZE`) read one byte past `temp`: it pre-read a byte before the loop and
-   re-read one at the end of every iteration. It now reads exactly `temp` bytes.
+1. Before `pvmp3_get_side_info()` runs, the frame is rejected (with
+   `NO_ENOUGH_MAIN_DATA_ERROR`) unless the input buffer can hold the 4-byte
+   header, the optional 2-byte CRC, the full side information, and the 3-byte
+   slack of `getNbits()`'s unconditional 4-byte prefetch window. The downstream
+   completeness check (`predicted_frame_size` vs `inputBufferCurrentLength`)
+   runs only *after* the side info is parsed, so it cannot guard that read. The
+   32-byte header floor in `pvmp3_decode_header.cpp` used to mask this by
+   rejecting every frame too small to overrun; lowering it to 5 (to admit valid
+   sub-32-byte frames) let a degenerate sub-side-info frame through — e.g. an
+   8 kbps MPEG2 stereo frame at 24 kHz, 24 bytes, whose `4 + 2 + 17 = 23`
+   header/CRC/side-info bytes leave no room for the prefetch — and the
+   zero-copy direct path (buffer bounded to exactly the frame) read past the
+   caller's allocation. Valid small frames are unaffected: the smallest real
+   one is 24-byte 8 kbps MPEG2 *mono* (9-byte side info), which clears the
+   guard. Found by libFuzzer + ASan.
+2. In `fillMainDataBuf()`, the input-side read is clamped to
+   `inputBufferCurrentLength - offset`. Upstream bounds-checks only against
+   `BUFSIZE` (8192), which assumes the caller supplies an 8192-byte circular
+   buffer. The wrapper instead passes a caller-owned slice or the 1536-byte
+   internal buffer, so `BUFSIZE` overcommits and malformed side-info can drive
+   `offset + temp` past the allocation. Out-of-range data now produces a
+   downstream parse error, reported as `MP3_DECODE_ERROR`.
+3. The unrolled fallback loop in `fillMainDataBuf()` (taken when the main-data
+   buffer wraps at `BUFSIZE`) read one byte past `temp`: it pre-read a byte
+   before the loop and re-read one at the end of every iteration. It now reads
+   exactly `temp` bytes.
 
 ### `pvmp3_dec_defs.h`
 
@@ -47,10 +64,11 @@ Two changes:
    26), so low-bitrate mono streams such as speech and TTS had all frames skipped
    and decoded to silence. Five is the minimum the header parse can read (its
    `getNbits(21)` prefetch touches byte 4) and stays below the smallest valid
-   frame. The full-frame check in `pvmp3_framedecoder()` (`predicted_frame_size`
-   vs `inputBufferCurrentLength`) still rejects an incomplete frame before any
-   main-data read, and the wrapper only calls the decoder with a complete frame
-   buffered.
+   frame. The wrapper only calls the decoder with a complete frame buffered, and
+   `pvmp3_framedecoder()` then guards the reads this floor no longer covers: a
+   side-info bounds check (see that file's entry) before `pvmp3_get_side_info()`,
+   and the `predicted_frame_size` vs `inputBufferCurrentLength` check before any
+   main-data read.
 
 ### `pvmp3_huffman_parsing.cpp`
 

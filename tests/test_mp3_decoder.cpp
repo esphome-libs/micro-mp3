@@ -584,6 +584,33 @@ static bool test_corrupt_frame_recovery() {
     return true;
 }
 
+// An 8 kbps MPEG2 stereo frame at 24 kHz is 24 bytes, but its header (4) + CRC
+// (2) + side info (17) leave no room for getNbits()'s 4-byte prefetch, which
+// reads 2 bytes past the frame. Sizing data to exactly the frame puts it at the
+// end of its allocation, so the full-buffer (direct, zero-copy) decode trips
+// ASan if the bounds guard in pvmp3_framedecoder() is ever removed. Reproducer:
+// tests/fuzz/crashes/sideinfo-overread-decode_direct.bin.
+static bool test_sideinfo_overread_guard() {
+    // FF F2: sync, MPEG2, Layer III, protection bit clear (CRC present).
+    // 14: bitrate_index 1 (8 kbps), samplerate_index 1 (24 kHz), no padding.
+    // 00: channel mode stereo, 17-byte side info.
+    std::vector<uint8_t> data = {0xFF, 0xF2, 0x14, 0x00};
+    data.resize(24, 0x00);  // CRC, side info, one main-data byte
+    CHECK_EQ(frame_length_at(data.data(), data.size()), 24);
+
+    Mp3Decoder dec;
+    DecodeOutput out = decode_stream(dec, data.data(), data.size());
+
+    // The header probes fine; the frame is skipped as a recoverable error.
+    CHECK(!out.errored);
+    CHECK(out.header_ready);
+    CHECK_EQ(out.sample_rate, 24000);
+    CHECK_EQ(out.channels, 2);
+    CHECK(out.decode_errors >= 1);
+    CHECK(out.pcm.empty());
+    return true;
+}
+
 static bool test_leading_garbage_resync() {
     DecodeOutput ref = reference_decode("sine_stereo_44100.mp3");
     CHECK(!ref.errored);
@@ -726,6 +753,7 @@ static const TestCase TESTS[] = {
     {"reset_reuse", test_reset_reuse},
     {"error_contract", test_error_contract},
     {"corrupt_frame_recovery", test_corrupt_frame_recovery},
+    {"sideinfo_overread_guard", test_sideinfo_overread_guard},
     {"leading_garbage_resync", test_leading_garbage_resync},
     {"id3v2_skip", test_id3v2_skip},
     {"gapless_trim", test_gapless_trim},

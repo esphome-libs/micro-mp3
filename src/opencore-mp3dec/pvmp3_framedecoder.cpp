@@ -187,6 +187,41 @@ ERROR_CODE pvmp3_framedecoder(tPVMP3DecoderExternal *pExt,
         return errorCode;
     }
 
+    /*
+     * microMP3 FIX: reject a frame whose buffer cannot hold the header, the
+     * optional CRC, and the full side information before pvmp3_get_side_info
+     * reads them. The completeness check further down (predicted_frame_size vs
+     * inputBufferCurrentLength) runs only AFTER the side info is parsed, and
+     * getNbits unconditionally prefetches a 4-byte word, so the last side-info
+     * read can touch up to 3 bytes past the side info's final byte. On the
+     * zero-copy direct path the buffer is bounded to exactly the frame, so a
+     * degenerate sub-side-info frame (e.g. 8 kbps MPEG2 stereo at 24 kHz: a
+     * 24-byte frame whose 4 + 2 + 17 = 23 header/CRC/side-info bytes leave no
+     * slack for the prefetch) read past the caller's allocation. The 32-byte
+     * header floor used to mask this by rejecting every frame this small;
+     * lowering it to 5 (to admit valid sub-32-byte frames) exposed it.
+     * Found by libFuzzer + ASan.
+     *
+     * Scoped to Layer III: side info (and the CRC read below) exist only for
+     * Layer III, the sole layer this decoder handles. Other layers never reach
+     * pvmp3_get_side_info and fall through to the UNSUPPORTED_LAYER path.
+     */
+    if (info->layer_description == 3)
+    {
+        int32 side_info_bytes = (info->version_x == MPEG_1)
+                                ? ((info->mode == MPG_MD_MONO) ? 17 : 32)
+                                : ((info->mode == MPG_MD_MONO) ?  9 : 17);
+        /* bits still to be read from the raw input: optional 16-bit CRC + side info */
+        int32 region_bits = (info->error_protection ? 16 : 0) + (side_info_bytes << 3);
+        /* byte index of the last bit, widened by the getNbits 4-byte prefetch window */
+        int32 last_byte = (int32)((pVars->inputStream.usedBits + region_bits - 1) >> 3) + 3;
+        if (last_byte >= (int32)pVars->inputStream.inputBufferCurrentLength)
+        {
+            pExt->outputFrameSize = 0;
+            return NO_ENOUGH_MAIN_DATA_ERROR;
+        }
+    }
+
     pVars->num_channels = (info->mode == MPG_MD_MONO) ? 1 : 2;
     pExt->num_channels = pVars->num_channels;
 
