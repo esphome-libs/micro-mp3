@@ -121,15 +121,17 @@ ERROR_CODE pvmp3_decode_header(tmp3Bits  *inputStream,
     uint32  temp;
 
     /*
-     *  Reject input too short to hold the 4-byte frame header. The complete
-     *  frame is validated downstream in pvmp3_framedecoder (predicted_frame_size
-     *  vs inputBufferCurrentLength) before any main-data read, so this guard
-     *  only covers the header parse below. The floor must not exceed the
-     *  smallest valid Layer III frame, 24 bytes (8 kbps MPEG2 at 22.05/24 kHz).
+     *  Require enough bytes for the header parse below. Its last read,
+     *  getNbits(21) at bit offset 11, prefetches a 4-byte word starting at byte
+     *  1 and so touches byte 4: five bytes must be present. The complete frame
+     *  is validated downstream in pvmp3_framedecoder (predicted_frame_size vs
+     *  inputBufferCurrentLength) before any main-data read. Five is below the
+     *  smallest valid Layer III frame, 24 bytes (8 kbps MPEG2 at 24 kHz), so no
+     *  valid frame is rejected.
      *
-     *  microMP3 FIX: floor is 4; upstream uses SYNC_WORD_LNGTH + 21 (32).
+     *  microMP3 FIX: floor is 5; upstream uses SYNC_WORD_LNGTH + 21 (32).
      */
-    if (inputStream->inputBufferCurrentLength < 4)
+    if (inputStream->inputBufferCurrentLength < 5)
     {
         return NO_ENOUGH_MAIN_DATA_ERROR;
     }

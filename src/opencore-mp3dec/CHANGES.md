@@ -42,13 +42,15 @@ Two changes:
    upstream accepted the reserved index and the read surfaced in
    `pvmp3_get_main_data_size()`.
 2. The "header complete" floor is lowered from `SYNC_WORD_LNGTH + 21` (32 bytes)
-   to 4 (the header size). The 32-byte floor rejected every valid frame shorter
-   than 32 bytes; the smallest Layer III frame is 24 bytes (8 kbps MPEG2 at
-   22.05/24 kHz), so low-bitrate mono streams such as speech and TTS had all
-   frames skipped and decoded to silence. The full-frame check in
-   `pvmp3_framedecoder()` (`predicted_frame_size` vs `inputBufferCurrentLength`)
-   still rejects an incomplete frame before any main-data read, and the wrapper
-   only calls the decoder with a complete frame buffered.
+   to 5. The 32-byte floor rejected every valid frame shorter than 32 bytes; the
+   smallest Layer III frame is 24 bytes (8 kbps MPEG2 at 24 kHz; 22.05 kHz gives
+   26), so low-bitrate mono streams such as speech and TTS had all frames skipped
+   and decoded to silence. Five is the minimum the header parse can read (its
+   `getNbits(21)` prefetch touches byte 4) and stays below the smallest valid
+   frame. The full-frame check in `pvmp3_framedecoder()` (`predicted_frame_size`
+   vs `inputBufferCurrentLength`) still rejects an incomplete frame before any
+   main-data read, and the wrapper only calls the decoder with a complete frame
+   buffered.
 
 ### `pvmp3_huffman_parsing.cpp`
 
