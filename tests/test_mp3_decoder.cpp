@@ -105,6 +105,7 @@ static const Fixture FIXTURES[] = {
     {"sine_mono_44100.mp3", 44100, 1, micro_mp3::MP3_MPEG1, 128, 66150, true},
     {"sine_stereo_22050.mp3", 22050, 2, micro_mp3::MP3_MPEG2, 96, 33075, true},
     {"sine_mono_8000.mp3", 8000, 1, micro_mp3::MP3_MPEG2_5, 32, 12000, true},
+    {"sine_mono_24000_8kbps.mp3", 24000, 1, micro_mp3::MP3_MPEG2, 0, 36000, true},
     {"sine_stereo_44100_vbr.mp3", 44100, 2, micro_mp3::MP3_MPEG1, 0, 88200, true},
     {"sine_stereo_44100_noxing.mp3", 44100, 2, micro_mp3::MP3_MPEG1, 128, 0, false},
 };
@@ -318,6 +319,7 @@ static bool test_decode_accuracy() {
         {"sine_stereo_44100.mp3", 44100, 2, {500.0, 1700.0}},
         {"sine_mono_44100.mp3", 44100, 1, {600.0, 0.0}},
         {"sine_stereo_22050.mp3", 22050, 2, {400.0, 1500.0}},
+        {"sine_mono_24000_8kbps.mp3", 24000, 1, {440.0, 0.0}},
     };
     const double decoys[] = {120.0, 250.0, 1000.0, 2500.0, 3500.0};
 

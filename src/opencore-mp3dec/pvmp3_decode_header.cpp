@@ -121,9 +121,17 @@ ERROR_CODE pvmp3_decode_header(tmp3Bits  *inputStream,
     uint32  temp;
 
     /*
-     *  Verify that at least the header is complete
+     *  Require enough bytes for the header parse below. Its last read,
+     *  getNbits(21) at bit offset 11, prefetches a 4-byte word starting at byte
+     *  1 and so touches byte 4: five bytes must be present. The complete frame
+     *  is validated downstream in pvmp3_framedecoder (predicted_frame_size vs
+     *  inputBufferCurrentLength) before any main-data read. Five is below the
+     *  smallest valid Layer III frame, 24 bytes (8 kbps MPEG2 at 24 kHz), so no
+     *  valid frame is rejected.
+     *
+     *  microMP3 FIX: floor is 5; upstream uses SYNC_WORD_LNGTH + 21 (32).
      */
-    if (inputStream->inputBufferCurrentLength < (SYNC_WORD_LNGTH + 21))
+    if (inputStream->inputBufferCurrentLength < 5)
     {
         return NO_ENOUGH_MAIN_DATA_ERROR;
     }
