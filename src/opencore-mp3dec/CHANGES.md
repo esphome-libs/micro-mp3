@@ -29,11 +29,12 @@ A side-info bounds guard in `pvmp3_framedecoder()`, plus two fixes in
    guard. Found by libFuzzer + ASan.
 2. In `fillMainDataBuf()`, the input-side read is clamped to
    `inputBufferCurrentLength - offset`. Upstream bounds-checks only against
-   `BUFSIZE` (8192), which assumes the caller supplies an 8192-byte circular
-   buffer. The wrapper instead passes a caller-owned slice or the 1536-byte
-   internal buffer, so `BUFSIZE` overcommits and malformed side-info can drive
-   `offset + temp` past the allocation. Out-of-range data now produces a
-   downstream parse error, reported as `MP3_DECODE_ERROR`.
+   `BUFSIZE` (8192; 2048 in this fork, see below), which assumes the caller
+   supplies a `BUFSIZE`-byte circular buffer. The wrapper instead passes a
+   caller-owned slice or the 1536-byte internal buffer, so `BUFSIZE` overcommits
+   and malformed side-info can drive `offset + temp` past the allocation.
+   Out-of-range data now produces a downstream parse error, reported as
+   `MP3_DECODE_ERROR`.
 3. The unrolled fallback loop in `fillMainDataBuf()` (taken when the main-data
    buffer wraps at `BUFSIZE`) read one byte past `temp`: it pre-read a byte
    before the loop and re-read one at the end of every iteration. It now reads
@@ -41,13 +42,22 @@ A side-info bounds guard in `pvmp3_framedecoder()`, plus two fixes in
 
 ### `pvmp3_dec_defs.h`
 
-Comment only. The `BUFSIZE` comment states what the constant is: the 8192-byte
-bit-reservoir ring buffer, sized for one frame's main data plus up to 511 bytes
-back-referenced via `main_data_begin`. Upstream's comment called it the size of
-the biggest MP3 frame, which is wrong (the largest compressed frame is 1441
-bytes; 4608 is the decoded PCM output size). The comment also notes that pvmp3
-reuses `BUFSIZE` as the wrap modulus for input-buffer reads, the case the bound
-check in `fillMainDataBuf()` handles.
+`BUFSIZE` is reduced from 8192 to 2048, and its comment is rewritten. `BUFSIZE`
+is the size of the bit-reservoir ring buffer (`mainDataBuffer[BUFSIZE]`), which
+holds one frame's main data plus up to 511 bytes back-referenced via
+`main_data_begin`. The live window is therefore at most `1441 + 511 = 1952`
+bytes, so the ring only needs the next power of two above that. Upstream's 8192
+was 4x larger than required (its comment also misdescribed it as the size of the
+biggest MP3 frame, which is wrong: the largest compressed frame is 1441 bytes
+and 4608 is the decoded PCM output size). 2048 is the smallest power of two that
+covers 1952 with ~96 bytes of slack, saving 6 KB per decoder instance. It also
+clears the second `BUFSIZE` floor: pvmp3 reuses `BUFSIZE` as the wrap modulus
+for input-buffer reads, so it must stay strictly greater than
+`MP3_INPUT_BUFFER_SIZE` (1536) for that mask to remain a no-op (the case the
+bound check in `fillMainDataBuf()` handles). 2048 satisfies both constraints and
+is the floor. The smaller ring only makes `mainDataStream.offset` wrap more
+often, swapping a `pv_memcpy` for an equivalent byte copy in `fillMainDataBuf()`;
+decoded output is unchanged.
 
 ### `pvmp3_decode_header.cpp`
 

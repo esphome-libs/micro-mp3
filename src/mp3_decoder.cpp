@@ -858,7 +858,7 @@ Mp3Result Mp3Decoder::decode_buffered(tPVMP3DecoderExternal& ext, const uint8_t*
             // unvalidated bytes to pvmp3 -- its internal parser has
             // out-of-bounds read paths when given adversarial data (the
             // internal buffer is MP3_INPUT_BUFFER_SIZE bytes but pvmp3
-            // treats pBuffer as a BUFSIZE=8192 circular buffer, so reads
+            // treats pBuffer as a BUFSIZE=2048 circular buffer, so reads
             // past our allocation slip past pvmp3's own bounds checks).
             // Scan forward in the already-buffered bytes for the next sync
             // candidate and shift it to the start.

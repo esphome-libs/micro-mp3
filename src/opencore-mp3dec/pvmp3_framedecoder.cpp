@@ -633,7 +633,7 @@ void fillMainDataBuf(void  *pMem, int32 temp)
      *
      *  microMP3 NOTE: the clamp above ensures temp <= avail - offset, and
      *  the wrapper never sets inputBufferCurrentLength larger than
-     *  MP3_INPUT_BUFFER_SIZE (1536), well below BUFSIZE (8192). So
+     *  MP3_INPUT_BUFFER_SIZE (1536), still below BUFSIZE (2048). So
      *  (offset + temp) < BUFSIZE always holds in practice and the `else`
      *  branch below is dead. Kept intact to preserve upstream pvmp3
      *  semantics in case the wrapper assumption ever changes.
