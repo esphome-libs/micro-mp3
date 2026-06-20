@@ -201,7 +201,12 @@ ERROR_CODE pvmp3_framedecoder(tPVMP3DecoderExternal *pExt,
      * header floor used to mask this by rejecting every frame this small;
      * lowering it to 5 (to admit valid sub-32-byte frames) exposed it.
      * Found by libFuzzer + ASan.
+     *
+     * Scoped to Layer III: side info (and the CRC read below) exist only for
+     * Layer III, the sole layer this decoder handles. Other layers never reach
+     * pvmp3_get_side_info and fall through to the UNSUPPORTED_LAYER path.
      */
+    if (info->layer_description == 3)
     {
         int32 side_info_bytes = (info->version_x == MPEG_1)
                                 ? ((info->mode == MPG_MD_MONO) ? 17 : 32)
