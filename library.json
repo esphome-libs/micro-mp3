@@ -1,6 +1,6 @@
 {
     "name": "microMP3",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "description": "Streaming MP3 decoder for embedded devices. Fixed-point decoder forked from OpenCore with frame synchronization, PSRAM-aware allocation, and lazy initialization. Supports MPEG 1, 2, and 2.5 Layer III.",
     "authors": [
         {
