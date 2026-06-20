@@ -655,22 +655,24 @@ void fillMainDataBuf(void  *pMem, int32 temp)
         else
         {
             /*
-             * microMP3 FIX: the original unrolled loop pre-read tmp1 before
-             * the loop and then re-read tmp1 at the end of every iteration
-             * (so each pass did 2 reads from `ptr` but 2 writes to the main
-             * data stream, meaning the tail iteration read one byte past
-             * `temp`). On valid streams the input buffer always had trailing
-             * slack so it went unnoticed; libFuzzer + ASan caught it when a
-             * frame landed at the very end of the caller's allocation.
-             * Replaced with a straight byte loop -- exactly `temp` reads.
+             * The main-data ring wraps within this copy. Since the source
+             * ptr[0..temp-1] is contiguous and temp < BUFSIZE, the write spans
+             * the ring at most once: copy the tail of the ring, then the part
+             * that wraps to the front. Two bulk copies of exactly `temp` source
+             * bytes total. With BUFSIZE = 2048 this wrap is common, so keeping
+             * it a memcpy (rather than a byte loop) matters.
+             *
+             * microMP3 FIX: upstream's unrolled two-at-a-time loop pre-read a
+             * byte before the loop and re-read at the end of every iteration, so
+             * the tail iteration read one byte past `temp`. Valid streams left
+             * trailing input slack so it went unnoticed; libFuzzer + ASan caught
+             * it when a frame ended at the caller's allocation. The split copy
+             * keeps the read bounded to exactly `temp`.
              */
-            for (int32 i = 0; i < temp; i++)
-            {
-                fillDataBuf(&pVars->mainDataStream, *(ptr++));
-            }
-
-            /* adjust circular buffer counter */
-            pVars->mainDataStream.offset = module(pVars->mainDataStream.offset, BUFSIZE);
+            int32 first = BUFSIZE - offset;  /* bytes from offset to the ring end */
+            pv_memcpy(pVars->mainDataStream.pBuffer + offset, ptr, first * sizeof(uint8));
+            pv_memcpy(pVars->mainDataStream.pBuffer, ptr + first, (temp - first) * sizeof(uint8));
+            pVars->mainDataStream.offset = module(offset + temp, BUFSIZE);
         }
     }
     else

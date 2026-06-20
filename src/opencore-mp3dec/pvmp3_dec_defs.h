@@ -75,8 +75,8 @@
 //      (~96 bytes of slack), saving 6 KB per decoder instance. The ring is
 //      addressed with module(x, BUFSIZE) == x & (BUFSIZE-1), so BUFSIZE must
 //      stay a power of two; the smaller ring just makes mainDataStream.offset
-//      wrap more often, which only swaps a single pv_memcpy for an equivalent
-//      byte-by-byte copy in fillMainDataBuf and is free relative to the DSP.
+//      wrap more often, which only splits fillMainDataBuf's single pv_memcpy
+//      into two at the wrap and is free relative to the DSP.
 //
 // pvmp3 also reuses BUFSIZE as the wrap modulus for reads of the *input*
 // buffer (in getNbits / getUpTo9bits / getUpTo17bits / fillMainDataBuf), which

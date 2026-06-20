@@ -35,10 +35,11 @@ A side-info bounds guard in `pvmp3_framedecoder()`, plus two fixes in
    and malformed side-info can drive `offset + temp` past the allocation.
    Out-of-range data now produces a downstream parse error, reported as
    `MP3_DECODE_ERROR`.
-3. The unrolled fallback loop in `fillMainDataBuf()` (taken when the main-data
-   buffer wraps at `BUFSIZE`) read one byte past `temp`: it pre-read a byte
-   before the loop and re-read one at the end of every iteration. It now reads
-   exactly `temp` bytes.
+3. The wrap path in `fillMainDataBuf()` (taken when the main-data ring wraps at
+   `BUFSIZE`) is two bulk `pv_memcpy` calls, one per side of the wrap. Upstream's
+   unrolled two-at-a-time loop pre-read a byte before the loop and re-read one at
+   the end of every iteration, reading one byte past `temp`; the split copy
+   reads exactly `temp` bytes.
 
 ### `pvmp3_dec_defs.h`
 
@@ -56,7 +57,7 @@ for input-buffer reads, so it must stay strictly greater than
 `MP3_INPUT_BUFFER_SIZE` (1536) for that mask to remain a no-op (the case the
 bound check in `fillMainDataBuf()` handles). 2048 satisfies both constraints and
 is the floor. The smaller ring only makes `mainDataStream.offset` wrap more
-often, swapping a `pv_memcpy` for an equivalent byte copy in `fillMainDataBuf()`;
+often, splitting `fillMainDataBuf()`'s single `pv_memcpy` into two at the wrap;
 decoded output is unchanged.
 
 ### `pvmp3_decode_header.cpp`
