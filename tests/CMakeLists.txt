@@ -64,6 +64,7 @@ set(DECODER_TESTS
     reset_reuse
     error_contract
     corrupt_frame_recovery
+    sideinfo_overread_guard
     leading_garbage_resync
     id3v2_skip
     gapless_trim
