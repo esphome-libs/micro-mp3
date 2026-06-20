@@ -66,6 +66,10 @@ gen_stereo sine_stereo_22050.mp3 22050 400 1500 1.5 -b:a 96k
 # MPEG2.5 mono CBR (version 2.5, lowest sample rate).
 gen_mono sine_mono_8000.mp3 8000 800 1.5 -b:a 32k
 
+# MPEG2 mono at 8 kbps: 24-byte audio frames, the smallest valid Layer III
+# frame.
+gen_mono sine_mono_24000_8kbps.mp3 24000 440 1.5 -b:a 8k
+
 # MPEG1 stereo VBR (Xing header with a frame count -> arms gapless end trim).
 gen_stereo sine_stereo_44100_vbr.mp3 44100 500 1700 2 -q:a 4
 

@@ -780,10 +780,9 @@ Mp3Result Mp3Decoder::decode_direct(tPVMP3DecoderExternal& ext, const uint8_t* i
             }
             if (status == NO_ENOUGH_MAIN_DATA_ERROR) {
                 // The buffer is bounded to exactly frame_size, so more input
-                // can't help. This also covers valid frames under 32 bytes
-                // (only 8 kbps MPEG2 at 22.05/24 kHz): pvmp3_decode_header
-                // rejects them outright, so they are skipped rather than
-                // decoded. Skip the frame and resync.
+                // can't help: the frame is genuinely short on main data (e.g. a
+                // bit-reservoir reference the bounded slice can't reach). Skip
+                // the frame and resync.
                 bytes_consumed = frame_size;
                 return MP3_DECODE_ERROR;
             }
@@ -941,10 +940,9 @@ Mp3Result Mp3Decoder::decode_buffered(tPVMP3DecoderExternal& ext, const uint8_t*
         return MP3_OK;
     }
     // Any non-success status is terminal here. The full frame is already
-    // buffered (see decode_direct for why more input can't help, including the
-    // sub-32-byte MPEG2 case), so flush and skip like any decode error.
-    // Returning MP3_NEED_MORE_DATA instead would re-decode the same bytes
-    // forever, since no new input is consumed.
+    // buffered (see decode_direct for why more input can't help), so flush and
+    // skip like any decode error. Returning MP3_NEED_MORE_DATA instead would
+    // re-decode the same bytes forever, since no new input is consumed.
     this->expected_frame_length_ = 0;
     this->input_buffer_fill_ = 0;
     return MP3_DECODE_ERROR;
