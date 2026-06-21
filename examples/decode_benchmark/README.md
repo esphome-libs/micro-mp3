@@ -78,8 +78,8 @@ I (1242) DECODE_BENCH: Audio: 30s Beethoven Symphony No. 3 (from 1:00), 48kHz st
 I (1252) DECODE_BENCH:   MP3 64kbps:  240744 bytes
 I (1252) DECODE_BENCH:   MP3 128kbps: 481128 bytes
 I (1262) DECODE_BENCH:   MP3 320kbps: 1202280 bytes
-I (1262) DECODE_BENCH: Free heap: 17107948 bytes
-I (1272) DECODE_BENCH: Free PSRAM: 16774624 bytes
+I (1262) DECODE_BENCH: Free heap: 8719472 bytes
+I (1272) DECODE_BENCH: Free PSRAM: 8386148 bytes
 I (1272) DECODE_BENCH: Free Internal: 333324 bytes
 I (1282) DECODE_BENCH: Concurrent decode test: up to 4 independent tasks
 
@@ -88,7 +88,7 @@ I (3292) DECODE_BENCH: Task 0 starting MP3 decode on core 0...
 I (3292) DECODE_BENCH: Task 0 finished (1983 ms)
 I (3292) DECODE_BENCH: Task 0: Frame (us): min=1485 max=2627 avg=1581.1 sd=55.3 (n=1251)
 I (3292) DECODE_BENCH: Task 0: Total: 1983 ms (setup: 0 ms, decode: 1982 ms), 30.0s audio, RTF: 0.066 (15.1x), decode RTF: 0.066 (15.1x), 48000 Hz, 2 ch, 64 kbps, core 0
-I (3302) DECODE_BENCH: Task 0: Decoder footprint: 34316 bytes (internal: 0, PSRAM: 34316) (decoder state + PCM buffer)
+I (3302) DECODE_BENCH: Task 0: Decoder footprint: 28172 bytes (internal: 0, PSRAM: 28172) (decoder state + PCM buffer)
 
 ...
 
@@ -101,10 +101,10 @@ I (16362) DECODE_BENCH:   4 tasks:    5801 ms
 ...
 
 I (57162) DECODE_BENCH: All decodes successful: YES
-I (57172) DECODE_BENCH: Free heap: 17107644 bytes
-I (57172) DECODE_BENCH: Min free heap ever:     16947980 bytes
+I (57172) DECODE_BENCH: Free heap: 8719168 bytes
+I (57172) DECODE_BENCH: Min free heap ever:     8584080 bytes
 I (57182) DECODE_BENCH: Min free internal ever: 310620 bytes
-I (57182) DECODE_BENCH: Min free PSRAM ever:    16637360 bytes
+I (57182) DECODE_BENCH: Min free PSRAM ever:    8273460 bytes
 ```
 
 The MP3 header probe is a few-byte parse, so `setup` is effectively 0 ms and `decode RTF` tracks the overall RTF; the split is reported for parity with the other codec benchmarks. The decoder footprint lands entirely in PSRAM here because decoder state defaults to PSRAM and `MALLOC_CAP_DEFAULT` resolves to PSRAM under this configuration; it is reported only for single-task runs.
@@ -259,10 +259,10 @@ Keep clips ~30 seconds to fit in flash.
 | Flash (audio only) | ~1.9MB | ~235KB (64k) + ~470KB (128k) + ~1174KB (320k) |
 | Task stack | ~5KB each | Per FreeRTOS task (`5192` bytes); PCM buffer is heap-allocated separately |
 | PCM output buffer | 4.5KB each | Heap-allocated per task (`MP3_MIN_OUTPUT_BUFFER_BYTES` = 4608 bytes) |
-| Decoder state | ~23KB | Allocated on first `decode()` call; PSRAM preferred by default |
-| Decoder footprint | 34,316 bytes per stream | Decoder state + internal input buffer + PCM buffer combined. The benchmark logs this per single-task run as "Decoder footprint"; it lands entirely in PSRAM under the default configuration (internal: 0) |
+| Decoder state | ~21KB | Allocated on first `decode()` call; PSRAM preferred by default |
+| Decoder footprint | 28172 bytes per stream | Decoder state + internal input buffer + PCM buffer combined. The benchmark logs this per single-task run as "Decoder footprint"; it lands entirely in PSRAM under the default configuration (internal: 0) |
 
-With concurrent tasks the footprint is roughly Nx the single-stream number (about 137KB for 4 tasks), plus a ~5KB stack per task. Per-iteration the benchmark also logs the low-water marks (`Min free heap/internal/PSRAM ever`), which capture the trough during the peak-concurrency phase even after every task has exited.
+With concurrent tasks the footprint is roughly Nx the single-stream number (about 113KB for 4 tasks), plus a ~5KB stack per task. Per-iteration the benchmark also logs the low-water marks (`Min free heap/internal/PSRAM ever`), which capture the trough during the peak-concurrency phase even after every task has exited.
 
 ## Troubleshooting
 

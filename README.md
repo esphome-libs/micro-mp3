@@ -190,11 +190,11 @@ Each stream decodes on a single thread. Running a second stream on the other cor
 
 | Allocation | Size | Notes |
 | ---------- | ---- | ----- |
-| Decoder state | ~27.3KB | Allocated via `pvmp3_decoderMemRequirements()`; PSRAM preferred by default |
+| Decoder state | ~21.3KB | Allocated via `pvmp3_decoderMemRequirements()`; PSRAM preferred by default |
 | Internal input buffer | 1.5KB | MP3 frame accumulation (`MP3_INPUT_BUFFER_SIZE`, 1536 bytes) |
 | PCM output buffer | 4.5KB | User-provided; `MP3_MIN_OUTPUT_BUFFER_BYTES` (4608 bytes) |
 
-Total internal allocation: ~28.8KB (decoder state + input buffer). The PCM output buffer is caller-owned.
+Total internal allocation: ~22.8KB (decoder state + input buffer). The PCM output buffer is caller-owned.
 
 ## Testing
 

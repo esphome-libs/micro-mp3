@@ -69,18 +69,30 @@
 //      the bit reservoir ring buffer (mainDataBuffer[BUFSIZE]), which has to
 //      hold the current frame's main data PLUS up to 511 bytes of prior
 //      frames' main data referenced via the main_data_begin back-pointer.
-//      8192 is "comfortably more than 1441 + 511, rounded to a power of two."
+//      The live window is therefore at most 1441 + 511 = 1952 bytes, so the
+//      ring only needs the next power of two above that. Upstream shipped 8192;
+//      this fork uses 2048, the smallest power of two that still covers 1952
+//      (~96 bytes of slack), saving 6 KB per decoder instance. The ring is
+//      addressed with module(x, BUFSIZE) == x & (BUFSIZE-1), so BUFSIZE must
+//      stay a power of two; the smaller ring just makes mainDataStream.offset
+//      wrap more often, which only splits fillMainDataBuf's single pv_memcpy
+//      into two at the wrap and is free relative to the DSP.
 //
 // pvmp3 also reuses BUFSIZE as the wrap modulus for reads of the *input*
 // buffer (in getNbits / getUpTo9bits / getUpTo17bits / fillMainDataBuf), which
-// implicitly assumes the caller supplies an 8192-byte circular buffer. The
+// implicitly assumes the caller supplies a BUFSIZE-byte circular buffer. The
 // micro-mp3 wrapper does not -- it hands pvmp3 a slice sized for one frame
-// (<= 1536 bytes). The wrapper is responsible for keeping usedBits within
-// inputBufferCurrentLength so the modulo arithmetic is harmless (offset &
-// 8191 == offset whenever offset < 1536); the input-side bound check added
-// to fillMainDataBuf in this fork closes the one path where pvmp3 itself
-// would have over-read.
-#define BUFSIZE   8192
+// (<= MP3_INPUT_BUFFER_SIZE == 1536 bytes). The wrapper is responsible for
+// keeping usedBits within inputBufferCurrentLength so the modulo arithmetic is
+// harmless (offset & (BUFSIZE-1) == offset whenever offset < 1536); the
+// input-side bound check added to fillMainDataBuf in this fork closes the one
+// path where pvmp3 itself would have over-read.
+//
+// BUFSIZE therefore has two independent floors: the 1952-byte reservoir window
+// AND the requirement that it stay strictly greater than MP3_INPUT_BUFFER_SIZE
+// (1536) so the input-buffer mask remains a no-op. 2048 is the smallest power
+// of two satisfying both -- do not shrink it further.
+#define BUFSIZE   2048
 
 #define CHAN           2
 #define GRAN           2
