@@ -89,13 +89,18 @@ extern "C"
 
     inline int16 saturate16(int32 sample)
     {
-
+#ifdef __XTENSA__
+        /* CLAMPS saturates to [-2^15, 2^15-1] in one instruction,
+           the same range as the generic branch below. */
+        __asm__("clamps %0, %1, 15" : "=r"(sample) : "r"(sample));
+        return sample;
+#else
         if ((sample >> 15) ^(sample >> 31))
         {
             sample = MAX_16BITS_INT ^(sample >> 31);
         }
         return sample;
-
+#endif
     }
 
 
