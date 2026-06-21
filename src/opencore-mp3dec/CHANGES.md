@@ -258,6 +258,15 @@ are stripped from `pvmp3_dct_16.cpp`, `pvmp3_dct_9.cpp`, `pvmp3_mdct_18.cpp`,
 Decoded output is byte-for-byte identical. The removed assembly is in the
 upstream tree linked at the top of this file.
 
+### `pvmp3_polyphase_filter_window.h`
+
+Beyond the assembly-guard stripping noted above, `saturate16()` uses the Xtensa
+`CLAMPS` instruction on Xtensa targets. `CLAMPS rd, rs, 15` saturates a signed
+value to `[-2^15, 2^15-1]` in one instruction, the same range the generic branch
+produces, so the decoded output is unchanged. The generic branch is kept under
+`#else` for other targets. This replaces a branch on the per-output-sample path with
+a single instruction.
+
 ## Removed Functions
 
 Functions with no callers in any build configuration.
