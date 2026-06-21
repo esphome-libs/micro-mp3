@@ -633,7 +633,11 @@ void fillMainDataBuf(void  *pMem, int32 temp)
      *  flat buffer anyway -- so it is removed. The main-data ring still wraps,
      *  handled below.
      */
-    uint8 * ptr = pVars->inputStream.pBuffer + offset;
+if (temp <= 0)
+{
+    return;
+}
+uint8 * ptr = pVars->inputStream.pBuffer + offset;
 
     offset = pVars->mainDataStream.offset;
 
