@@ -531,6 +531,180 @@ static size_t frame_length_at(const uint8_t* data, size_t len) {
     return (coeff * bitrate * 1000) / rate + padding;
 }
 
+// decode() accepts an output buffer sized to the stream's actual per-frame
+// output (smaller than the MPEG1-stereo worst case for mono or MPEG2/2.5
+// streams) and rejects one int16_t below it. get_min_output_buffer_bytes() still
+// reports the worst case, which is always safe.
+static bool test_per_stream_output_buffer() {
+    struct Case {
+        const char* file;
+        size_t expected_min_bytes;  // get_samples_per_frame() * channels * 2
+    };
+    const Case cases[] = {
+        {"sine_mono_44100.mp3", 1152 * 1 * sizeof(int16_t)},   // MPEG1 mono   = 2304
+        {"sine_mono_8000.mp3", 576 * 1 * sizeof(int16_t)},     // MPEG2.5 mono = 1152
+        {"sine_stereo_22050.mp3", 576 * 2 * sizeof(int16_t)},  // MPEG2 stereo = 2304
+    };
+
+    for (const Case& c : cases) {
+        std::vector<uint8_t> data = read_file(c.file);
+        CHECK(!data.empty());
+
+        Mp3Decoder dec;
+
+        // The reported minimum is the always-safe worst case, regardless of stream.
+        CHECK_EQ(dec.get_min_output_buffer_bytes(), micro_mp3::MP3_MIN_OUTPUT_BUFFER_BYTES);
+
+        // Drive past the header probe with a worst-case buffer.
+        std::vector<int16_t> probe_buf(micro_mp3::MP3_MIN_OUTPUT_BUFFER_BYTES / sizeof(int16_t));
+        uint8_t* probe_ptr = reinterpret_cast<uint8_t*>(probe_buf.data());
+        const size_t probe_size = probe_buf.size() * sizeof(int16_t);
+
+        size_t off = 0;
+        size_t consumed = 0;
+        size_t samples = 0;
+        Mp3Result r = micro_mp3::MP3_OK;
+        bool probed = false;
+        for (int i = 0; i < 1000 && !probed; i++) {
+            r = dec.decode(data.data() + off, data.size() - off, probe_ptr, probe_size, consumed,
+                           samples);
+            off += consumed;
+            CHECK(r >= 0);
+            probed = (r == micro_mp3::MP3_STREAM_INFO_READY);
+        }
+        CHECK(probed);
+
+        // The always-safe minimum does not change after probing.
+        CHECK_EQ(dec.get_min_output_buffer_bytes(), micro_mp3::MP3_MIN_OUTPUT_BUFFER_BYTES);
+
+        // This stream's actual per-frame output is strictly smaller than the
+        // worst case, and decode() accepts a buffer sized exactly to it.
+        const size_t min_bytes = dec.get_samples_per_frame() * dec.get_channels() * sizeof(int16_t);
+        CHECK_EQ(min_bytes, c.expected_min_bytes);
+        CHECK(min_bytes < micro_mp3::MP3_MIN_OUTPUT_BUFFER_BYTES);
+
+        // One int16 below the per-frame size is rejected, nothing consumed.
+        std::vector<int16_t> tight(min_bytes / sizeof(int16_t));
+        uint8_t* tight_ptr = reinterpret_cast<uint8_t*>(tight.data());
+        {
+            size_t c2 = 123;
+            size_t s2 = 123;
+            r = dec.decode(data.data() + off, data.size() - off, tight_ptr,
+                           min_bytes - sizeof(int16_t), c2, s2);
+            CHECK_EQ(r, micro_mp3::MP3_OUTPUT_BUFFER_TOO_SMALL);
+            CHECK_EQ(c2, 0);
+            CHECK_EQ(s2, 0);
+        }
+
+        // A buffer of exactly the per-stream minimum decodes the rest of the
+        // stream without ever reporting TOO_SMALL, and yields real PCM.
+        size_t total_samples = 0;
+        const size_t max_calls = 64 * (data.size() + 1024);
+        for (size_t calls = 0; calls < max_calls && off < data.size(); calls++) {
+            r = dec.decode(data.data() + off, data.size() - off, tight_ptr, min_bytes, consumed,
+                           samples);
+            CHECK(r != micro_mp3::MP3_OUTPUT_BUFFER_TOO_SMALL);
+            CHECK(r >= 0 || r == micro_mp3::MP3_DECODE_ERROR);  // recoverable at worst
+            off += consumed;
+            total_samples += samples;
+            if (consumed == 0 && samples == 0) {
+                break;  // no forward progress: end of stream
+            }
+        }
+        CHECK(total_samples > 0);
+    }
+    return true;
+}
+
+// A mid-stream change in sample rate, channel count, or MPEG version is surfaced
+// as MP3_STREAM_INFO_CHANGED (recoverable, no PCM, accessors updated) instead of
+// feeding new-format audio into a pipeline set up for the old format.
+// Concatenating a stereo MPEG1 stream and a mono MPEG2.5 stream changes all three
+// at the seam. The first stream carries a Xing header, so this also covers
+// clearing its gapless trim state, which would otherwise silence the second
+// stream. The decoder reports the change once; a re-call decodes the new-format
+// frame so audio resumes.
+static bool test_stream_info_change() {
+    std::vector<uint8_t> first = read_file("sine_stereo_44100.mp3");  // MPEG1 stereo 44100, Xing
+    std::vector<uint8_t> second = read_file("sine_mono_8000.mp3");    // MPEG2.5 mono 8000
+    CHECK(!first.empty());
+    CHECK(!second.empty());
+    std::vector<uint8_t> combined = first;
+    combined.insert(combined.end(), second.begin(), second.end());
+
+    Mp3Decoder dec;
+    std::vector<int16_t> buf(micro_mp3::MP3_MIN_OUTPUT_BUFFER_BYTES / sizeof(int16_t));
+    uint8_t* out = reinterpret_cast<uint8_t*>(buf.data());
+    const size_t out_size = buf.size() * sizeof(int16_t);
+
+    bool saw_probe = false;
+    size_t change_events = 0;
+    uint32_t rate_before = 0;
+    uint32_t rate_after = 0;
+    uint8_t ch_before = 0;
+    uint8_t ch_after = 0;
+    Mp3Version ver_before = micro_mp3::MP3_MPEG1;
+    Mp3Version ver_after = micro_mp3::MP3_MPEG1;
+    size_t before_samples = 0;
+    size_t after_samples = 0;
+
+    size_t off = 0;
+    const size_t max_calls = 64 * (combined.size() + 1024);
+    for (size_t calls = 0; calls < max_calls; calls++) {
+        size_t consumed = 0;
+        size_t samples = 0;
+        Mp3Result r = dec.decode(combined.data() + off, combined.size() - off, out, out_size,
+                                 consumed, samples);
+
+        if (r == micro_mp3::MP3_STREAM_INFO_READY) {
+            saw_probe = true;
+            rate_before = dec.get_sample_rate();
+            ch_before = dec.get_channels();
+            ver_before = dec.get_version();
+            off += consumed;
+            continue;
+        }
+        if (r == micro_mp3::MP3_STREAM_INFO_CHANGED) {
+            // Recoverable: no PCM emitted, accessors now hold the new format.
+            CHECK_EQ(samples, 0);
+            change_events++;
+            rate_after = dec.get_sample_rate();
+            ch_after = dec.get_channels();
+            ver_after = dec.get_version();
+            off += consumed;  // 0 on the direct path, or bytes buffered this call
+            continue;         // re-call decodes the new-format frame
+        }
+        if (r == micro_mp3::MP3_DECODE_ERROR) {
+            off += consumed;
+            continue;
+        }
+        CHECK(r >= 0);
+        off += consumed;
+        if (samples > 0) {
+            if (change_events == 0) {
+                before_samples += samples;
+            } else {
+                after_samples += samples;
+            }
+        }
+        if (consumed == 0 && samples == 0) {
+            break;  // offered all remaining input with no progress: end of stream
+        }
+    }
+
+    CHECK(saw_probe);
+    CHECK_EQ(change_events, 1u);  // exactly one transition, at the seam
+    CHECK_EQ(ch_before, 2);
+    CHECK_EQ(ch_after, 1);
+    CHECK_EQ(rate_before, 44100u);
+    CHECK_EQ(rate_after, 8000u);
+    CHECK_EQ(ver_before, micro_mp3::MP3_MPEG1);
+    CHECK_EQ(ver_after, micro_mp3::MP3_MPEG2_5);
+    CHECK(before_samples > 0);  // audio decoded before the change
+    CHECK(after_samples > 0);   // audio resumed after recovering from the change
+    return true;
+}
+
 static bool test_corrupt_frame_recovery() {
     DecodeOutput ref = reference_decode("sine_stereo_44100.mp3");
     CHECK(!ref.errored);
@@ -752,6 +926,8 @@ static const TestCase TESTS[] = {
     {"decode_accuracy", test_decode_accuracy},
     {"reset_reuse", test_reset_reuse},
     {"error_contract", test_error_contract},
+    {"per_stream_output_buffer", test_per_stream_output_buffer},
+    {"stream_info_change", test_stream_info_change},
     {"corrupt_frame_recovery", test_corrupt_frame_recovery},
     {"sideinfo_overread_guard", test_sideinfo_overread_guard},
     {"leading_garbage_resync", test_leading_garbage_resync},

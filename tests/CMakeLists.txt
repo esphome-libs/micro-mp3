@@ -63,6 +63,8 @@ set(DECODER_TESTS
     decode_accuracy
     reset_reuse
     error_contract
+    per_stream_output_buffer
+    stream_info_change
     corrupt_frame_recovery
     sideinfo_overread_guard
     leading_garbage_resync

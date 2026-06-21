@@ -199,14 +199,18 @@ Mp3Result Mp3Decoder::decode(const uint8_t* input, size_t input_len, uint8_t* ou
         return MP3_OK;
     }
 
-    // Check output buffer size
-    if (output_size < MP3_MIN_OUTPUT_BUFFER_BYTES) {
+    // The per-frame requirement can fall below MP3_MIN_OUTPUT_BUFFER_BYTES for
+    // mono or MPEG2/2.5 streams, so check it rather than the worst case.
+    // version_ and output_channels_ are from the previous frame; OpenCore's
+    // outputFrameSize bound (see setup_decode_ext) is the real guard for the
+    // frame actually decoded.
+    if (output_size < this->get_samples_per_frame() * this->output_channels_ * sizeof(int16_t)) {
         return MP3_OUTPUT_BUFFER_TOO_SMALL;
     }
 
     // Set up the decoder external struct for this frame
     tPVMP3DecoderExternal ext;
-    this->setup_decode_ext(ext, output);
+    this->setup_decode_ext(ext, output, output_size);
 
     bool frame_decoded = false;
     Mp3Result result = MP3_OK;
@@ -717,7 +721,32 @@ bool Mp3Decoder::record_vbr_header_frame(const uint8_t* frame, size_t frame_len)
     return true;
 }
 
-void Mp3Decoder::setup_decode_ext(tPVMP3DecoderExternal& ext, uint8_t* output) {
+bool Mp3Decoder::detect_format_change(const Mp3FrameInfo& info) {
+    // Only a validly parsed header can establish a format; ignore the rest.
+    if (info.frame_length <= 0) {
+        return false;
+    }
+    if (info.sample_rate == this->sample_rate_ && info.channels == this->output_channels_ &&
+        info.version == this->version_) {
+        return false;
+    }
+    // Adopt the new format so the accessors report it; the caller re-reads them
+    // after MP3_STREAM_INFO_CHANGED. Bitrate is left to finalize_decode, which
+    // tracks the per-frame VBR value.
+    this->sample_rate_ = info.sample_rate;
+    this->output_channels_ = info.channels;
+    this->version_ = info.version;
+
+    // The gapless trim state was armed from the prior stream's Xing header. It
+    // does not apply to the new stream and, once the end-trim count is spent,
+    // would clamp every following frame to zero samples.
+    this->start_skip_remaining_ = 0;
+    this->output_samples_remaining_ = 0;
+    this->end_trim_active_ = false;
+    return true;
+}
+
+void Mp3Decoder::setup_decode_ext(tPVMP3DecoderExternal& ext, uint8_t* output, size_t output_size) {
     std::memset(&ext, 0, sizeof(ext));
 
     ext.inputBufferUsedLength = 0;
@@ -725,16 +754,19 @@ void Mp3Decoder::setup_decode_ext(tPVMP3DecoderExternal& ext, uint8_t* output) {
     ext.crcEnabled = 0;
     ext.pOutputBuffer = reinterpret_cast<int16*>(output);
 
-    // Set max output capacity in int16 samples
-    // NOLINTNEXTLINE(readability-magic-numbers)
-    ext.outputFrameSize = static_cast<int32>(MP3_MIN_OUTPUT_BUFFER_BYTES / sizeof(int16_t));
+    // Declare the caller's actual output capacity in int16 samples. OpenCore
+    // compares its computed per-frame size against this value and refuses to
+    // write (OUTPUT_BUFFER_TOO_SMALL) rather than overrun, so this is the real
+    // guard for buffers smaller than the MPEG1-stereo worst case.
+    ext.outputFrameSize = static_cast<int32>(output_size / sizeof(int16_t));
 }
 
 Mp3Result Mp3Decoder::decode_direct(tPVMP3DecoderExternal& ext, const uint8_t* input,
                                     size_t input_len, size_t& bytes_consumed, bool& frame_decoded) {
     frame_decoded = false;
 
-    int32_t mp3_len = Mp3Decoder::parse_mp3_frame_header(input, input_len).frame_length;
+    Mp3FrameInfo info = Mp3Decoder::parse_mp3_frame_header(input, input_len);
+    int32_t mp3_len = info.frame_length;
 
     if (mp3_len == 0) {
         // Fewer than 4 bytes available -- can't parse header yet.
@@ -763,6 +795,16 @@ Mp3Result Mp3Decoder::decode_direct(tPVMP3DecoderExternal& ext, const uint8_t* i
                 }
             }
 
+            // A mid-stream change in sample rate, channel count, or version
+            // invalidates the pipeline the caller configured at the probe. Report
+            // it before decoding so the caller reconfigures (and resizes the
+            // output buffer if needed) and re-calls; consume nothing so this same
+            // frame is decoded on the next call.
+            if (this->detect_format_change(info)) {
+                bytes_consumed = 0;
+                return MP3_STREAM_INFO_CHANGED;
+            }
+
             // Complete frame available -- zero-copy decode.
             // Bound OpenCore's reads to exactly this frame, preventing
             // it from reading past the frame into unrelated data.
@@ -785,6 +827,14 @@ Mp3Result Mp3Decoder::decode_direct(tPVMP3DecoderExternal& ext, const uint8_t* i
                 // the frame and resync.
                 bytes_consumed = frame_size;
                 return MP3_DECODE_ERROR;
+            }
+            if (status == OUTPUT_BUFFER_TOO_SMALL) {
+                // The buffer is too small for this frame; OpenCore's outputFrameSize
+                // bound caught it before any write. Consume nothing so the frame
+                // stays in the caller's input for a retry with a larger buffer
+                // (MP3_MIN_OUTPUT_BUFFER_BYTES always fits).
+                bytes_consumed = 0;
+                return MP3_OUTPUT_BUFFER_TOO_SMALL;
             }
             // Genuine decode error -- skip the entire bad frame so the caller
             // advances to the next potential MP3 header
@@ -916,6 +966,14 @@ Mp3Result Mp3Decoder::decode_buffered(tPVMP3DecoderExternal& ext, const uint8_t*
         }
     }
 
+    // Report a mid-stream format change before decoding (mirrors decode_direct).
+    // Keep the buffered frame and expected_frame_length_ intact so the re-call
+    // decodes it; bytes_consumed already reflects the input pulled this call.
+    if (this->detect_format_change(
+            Mp3Decoder::parse_mp3_frame_header(this->input_buffer_, this->input_buffer_fill_))) {
+        return MP3_STREAM_INFO_CHANGED;
+    }
+
     ext.pInputBuffer = this->input_buffer_;
     ext.inputBufferCurrentLength = static_cast<int32>(this->input_buffer_fill_);
     ext.inputBufferMaxLength = static_cast<int32>(MP3_INPUT_BUFFER_SIZE);
@@ -939,7 +997,14 @@ Mp3Result Mp3Decoder::decode_buffered(tPVMP3DecoderExternal& ext, const uint8_t*
         frame_decoded = true;
         return MP3_OK;
     }
-    // Any non-success status is terminal here. The full frame is already
+    if (status == OUTPUT_BUFFER_TOO_SMALL) {
+        // The buffer is too small for this frame; OpenCore wrote nothing. Keep the
+        // buffered frame and expected_frame_length_ (do not flush like a decode
+        // error) so a retry with a larger buffer decodes it. bytes_consumed already
+        // covers the input pulled this call; those bytes are safe in the buffer.
+        return MP3_OUTPUT_BUFFER_TOO_SMALL;
+    }
+    // Any other non-success status is terminal here. The full frame is already
     // buffered (see decode_direct for why more input can't help), so flush and
     // skip like any decode error. Returning MP3_NEED_MORE_DATA instead would
     // re-decode the same bytes forever, since no new input is consumed.
