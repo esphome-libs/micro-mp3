@@ -264,7 +264,7 @@ Beyond the assembly-guard stripping noted above, `saturate16()` uses the Xtensa
 `CLAMPS` instruction on Xtensa targets. `CLAMPS rd, rs, 15` saturates a signed
 value to `[-2^15, 2^15-1]` in one instruction, the same range the generic branch
 produces, so the decoded output is unchanged. The generic branch is kept under
-`#else` for targets. This replaces a branch on the per-output-sample path with
+`#else` for other targets. This replaces a branch on the per-output-sample path with
 a single instruction.
 
 ## Removed Functions

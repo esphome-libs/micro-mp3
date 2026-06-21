@@ -92,7 +92,7 @@ extern "C"
 #ifdef __XTENSA__
         /* CLAMPS saturates to [-2^15, 2^15-1] in one instruction,
            the same range as the generic branch below. */
-        __asm__("clamps %0, %1, 15" : "=r"(sample) : "r"(sample));
+        __asm__("clamps %0, %0, 15" : "+r"(sample));
         return sample;
 #else
         if ((sample >> 15) ^(sample >> 31))
