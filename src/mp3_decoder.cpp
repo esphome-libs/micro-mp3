@@ -200,10 +200,12 @@ Mp3Result Mp3Decoder::decode(const uint8_t* input, size_t input_len, uint8_t* ou
     }
 
     // The per-frame requirement can fall below MP3_MIN_OUTPUT_BUFFER_BYTES for
-    // mono or MPEG2/2.5 streams, so check it rather than the worst case.
-    // version_ and output_channels_ are from the previous frame; OpenCore's
-    // outputFrameSize bound (see setup_decode_ext) is the real guard for the
-    // frame actually decoded.
+    // mono or MPEG2/2.5 streams, so check that rather than the worst case, and
+    // reject a too-small buffer here before setting up the decode. version_ and
+    // output_channels_ track the current stream format (a size-affecting change
+    // is caught by detect_format_change before any frame is decoded), so this
+    // bound matches the frame about to be decoded. OpenCore re-checks the same
+    // bound as a backstop (see setup_decode_ext).
     if (output_size < this->get_samples_per_frame() * this->output_channels_ * sizeof(int16_t)) {
         return MP3_OUTPUT_BUFFER_TOO_SMALL;
     }
@@ -737,12 +739,19 @@ bool Mp3Decoder::detect_format_change(const Mp3FrameInfo& info) {
     this->output_channels_ = info.channels;
     this->version_ = info.version;
 
-    // The gapless trim state was armed from the prior stream's Xing header. It
-    // does not apply to the new stream and, once the end-trim count is spent,
-    // would clamp every following frame to zero samples.
+    // Discard the prior stream's gapless trim state: it was armed from that
+    // stream's Xing/Info header and does not apply here. Left in place, the
+    // spent end-trim count would clamp every following frame to zero samples.
     this->start_skip_remaining_ = 0;
     this->output_samples_remaining_ = 0;
     this->end_trim_active_ = false;
+
+    // Re-arm Xing/Info detection. A concatenated stream carries its own header
+    // frame; recheck the next frame so that header is recognized and skipped
+    // (and its delay/padding trimmed) instead of being decoded as audio. A
+    // stream with no such header fails the recheck and decodes normally, like
+    // any fresh stream's first frame.
+    this->vbr_header_checked_ = false;
     return true;
 }
 
@@ -755,9 +764,10 @@ void Mp3Decoder::setup_decode_ext(tPVMP3DecoderExternal& ext, uint8_t* output, s
     ext.pOutputBuffer = reinterpret_cast<int16*>(output);
 
     // Declare the caller's actual output capacity in int16 samples. OpenCore
-    // compares its computed per-frame size against this value and refuses to
-    // write (OUTPUT_BUFFER_TOO_SMALL) rather than overrun, so this is the real
-    // guard for buffers smaller than the MPEG1-stereo worst case.
+    // checks this against its computed per-frame size right after parsing the
+    // header and returns OUTPUT_BUFFER_TOO_SMALL before running any DSP or
+    // writing any PCM, so it cannot overrun a buffer smaller than the MPEG1-
+    // stereo worst case. This backstops the size check in decode().
     ext.outputFrameSize = static_cast<int32>(output_size / sizeof(int16_t));
 }
 

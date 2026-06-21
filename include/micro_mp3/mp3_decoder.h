@@ -36,9 +36,10 @@ namespace micro_mp3 {
 /// Success code: MP3_OK (0)
 /// Error codes: All negative values (< 0)
 ///
-/// Two negative codes are recoverable and should be handled before a generic
-/// `result < 0` bail: MP3_DECODE_ERROR (skip the bad frame and continue) and
-/// MP3_STREAM_INFO_CHANGED (reconfigure from the accessors and continue).
+/// Three negative codes are recoverable and should be handled before a generic
+/// `result < 0` bail: MP3_DECODE_ERROR (skip the bad frame and continue),
+/// MP3_STREAM_INFO_CHANGED (reconfigure from the accessors and continue), and
+/// MP3_OUTPUT_BUFFER_TOO_SMALL (enlarge the output buffer and continue).
 enum Mp3Result : int8_t {
     // Success / informational (>= 0)
     MP3_OK = 0,                 // Success (check samples_decoded output parameter)
@@ -49,12 +50,10 @@ enum Mp3Result : int8_t {
     // Errors (< 0)
     MP3_INPUT_INVALID = -1,            // Invalid input (nullptr or bad data)
     MP3_ALLOCATION_FAILED = -2,        // Memory allocation failed
-    MP3_OUTPUT_BUFFER_TOO_SMALL = -3,  // Output buffer too small for decoded samples
+    MP3_OUTPUT_BUFFER_TOO_SMALL = -3,  // Output buffer too small for the decoded frame
     MP3_DECODE_ERROR = -4,             // MP3 decode failed (corrupted/invalid frame); recoverable
     MP3_STREAM_INFO_CHANGED = -5       // Stream format (sample rate, channels, or MPEG version)
-                                       // changed mid-stream; samples_decoded is 0. Recoverable:
-                                       // re-read get_sample_rate()/get_channels()/get_version(),
-                                       // reconfigure the pipeline, then call decode() again.
+                                       // changed mid-stream
 };
 
 /// @brief MPEG version identifiers
@@ -142,6 +141,9 @@ struct Mp3FrameInfo {
  *      get_bitrate(), then call decode() again to get the first frame's PCM.
  *    - MP3_NEED_MORE_DATA (1): partial frame buffered, feed more data.
  *    - MP3_OK (0): success; check samples_decoded.
+ *    - MP3_OUTPUT_BUFFER_TOO_SMALL (-3): recoverable; the output buffer was too
+ *      small for the frame. Enlarge it and call decode() again (the frame is
+ *      retained). Cannot occur when output_size >= MP3_MIN_OUTPUT_BUFFER_BYTES.
  *    - MP3_DECODE_ERROR (-4): recoverable (bad frame skipped, advance and retry).
  *    - MP3_STREAM_INFO_CHANGED (-5): recoverable; the sample rate, channel count,
  *      or MPEG version changed mid-stream (no audio decoded). Re-read
@@ -246,16 +248,21 @@ public:
     ///                       by this amount (0 on the direct path, or the bytes
     ///                       buffered this call) and re-call after reconfiguring;
     ///                       the frame is retained and decoded on the next call.
-    ///                       For all other error codes (fatal errors), this is 0
-    ///                       -- do not advance. In the success case, this equals
-    ///                       the bytes used for one frame. When buffering partial
-    ///                       frame data, this equals the bytes copied into the
-    ///                       internal buffer.
+    ///                       MP3_OUTPUT_BUFFER_TOO_SMALL behaves the same way:
+    ///                       advance by this amount (0 unless bytes were buffered
+    ///                       this call), enlarge the output buffer, and re-call;
+    ///                       the frame is retained. For all other error codes
+    ///                       (fatal errors), this is 0; i.e., do not advance. In
+    ///                       the success case, this equals the bytes used for one
+    ///                       frame. When buffering partial frame data, this
+    ///                       equals the bytes copied into the internal buffer.
     /// @param[out] samples_decoded Number of valid PCM samples decoded (per channel)
     ///
     /// @return Mp3Result result code
     ///         - 0 (MP3_OK): Success (check samples_decoded)
     ///         - 1 (MP3_NEED_MORE_DATA): Incomplete frame buffered, feed more data
+    ///         - -3 (MP3_OUTPUT_BUFFER_TOO_SMALL): Output buffer too small for the
+    ///           frame; enlarge it and call again (recoverable)
     ///         - -4 (MP3_DECODE_ERROR): Corrupt frame skipped (recoverable)
     ///         - -5 (MP3_STREAM_INFO_CHANGED): Format changed mid-stream;
     ///           reconfigure from the accessors and call again (recoverable)
@@ -452,10 +459,11 @@ private:
     ///
     /// Compares a parsed frame header against the established stream format. On a
     /// change, updates the stored sample rate / channel count / version (so the
-    /// accessors report the new values) and returns true, letting decode() surface
-    /// MP3_STREAM_INFO_CHANGED before the frame is decoded. Bitrate is excluded
-    /// because it varies per frame on VBR. A header with frame_length <= 0 is
-    /// ignored (returns false).
+    /// accessors report the new values), discards the prior stream's gapless trim
+    /// state, re-arms Xing/Info detection for the new stream, and returns true,
+    /// letting decode() surface MP3_STREAM_INFO_CHANGED before the frame is
+    /// decoded. Bitrate is excluded because it varies per frame on VBR. A header
+    /// with frame_length <= 0 is ignored (returns false).
     ///
     /// @param info Parsed header of the frame about to be decoded
     /// @return true if the format changed (stored values were updated)

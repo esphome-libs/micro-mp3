@@ -620,17 +620,25 @@ static bool test_per_stream_output_buffer() {
 // as MP3_STREAM_INFO_CHANGED (recoverable, no PCM, accessors updated) instead of
 // feeding new-format audio into a pipeline set up for the old format.
 // Concatenating a stereo MPEG1 stream and a mono MPEG2.5 stream changes all three
-// at the seam. The first stream carries a Xing header, so this also covers
-// clearing its gapless trim state, which would otherwise silence the second
-// stream. The decoder reports the change once; a re-call decodes the new-format
-// frame so audio resumes.
+// at the seam. Both streams carry their own Info header, so the boundary exercises
+// two things: clearing the first stream's gapless trim state (which would
+// otherwise silence the second), and re-detecting the second stream's own Info
+// header so its leading frame is skipped and its delay/padding trimmed. The
+// decoder reports the change once; a re-call decodes the new-format frames, and
+// the post-change PCM count matches a standalone gapless decode of stream 2.
 static bool test_stream_info_change() {
-    std::vector<uint8_t> first = read_file("sine_stereo_44100.mp3");  // MPEG1 stereo 44100, Xing
-    std::vector<uint8_t> second = read_file("sine_mono_8000.mp3");    // MPEG2.5 mono 8000
+    std::vector<uint8_t> first = read_file("sine_stereo_44100.mp3");  // MPEG1 stereo 44100, Info
+    std::vector<uint8_t> second = read_file("sine_mono_8000.mp3");    // MPEG2.5 mono 8000, Info
     CHECK(!first.empty());
     CHECK(!second.empty());
     std::vector<uint8_t> combined = first;
     combined.insert(combined.end(), second.begin(), second.end());
+
+    // Standalone gapless decode of the second stream recovers its exact tone
+    // length; the post-change PCM below must match it.
+    DecodeOutput ref_second = reference_decode("sine_mono_8000.mp3");
+    CHECK(!ref_second.errored);
+    const size_t ref_second_samples = ref_second.pcm.size();  // mono: one sample per channel
 
     Mp3Decoder dec;
     std::vector<int16_t> buf(micro_mp3::MP3_MIN_OUTPUT_BUFFER_BYTES / sizeof(int16_t));
@@ -702,6 +710,9 @@ static bool test_stream_info_change() {
     CHECK_EQ(ver_after, micro_mp3::MP3_MPEG2_5);
     CHECK(before_samples > 0);  // audio decoded before the change
     CHECK(after_samples > 0);   // audio resumed after recovering from the change
+    // The second stream's own Info header was re-detected: its leading frame was
+    // skipped and its gapless trim applied, recovering exactly the standalone count.
+    CHECK_EQ(after_samples, ref_second_samples);
     return true;
 }
 

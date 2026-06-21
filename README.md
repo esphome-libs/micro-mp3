@@ -110,11 +110,11 @@ mkdir build && cd build && cmake .. && make
 | `MP3_STREAM_INFO_READY` | 2 | Stream format parsed from header; no PCM yet; advance by `bytes_consumed` |
 | `MP3_INPUT_INVALID` | -1 | Null pointer or bad input |
 | `MP3_ALLOCATION_FAILED` | -2 | Memory allocation failed |
-| `MP3_OUTPUT_BUFFER_TOO_SMALL` | -3 | Output buffer too small for the decoded frame (`MP3_MIN_OUTPUT_BUFFER_BYTES` always suffices) |
+| `MP3_OUTPUT_BUFFER_TOO_SMALL` | -3 | Output buffer too small for the decoded frame (recoverable; enlarge it and call again, the frame is retained). `MP3_MIN_OUTPUT_BUFFER_BYTES` always suffices |
 | `MP3_DECODE_ERROR` | -4 | Corrupt/invalid frame (recoverable; advance by `bytes_consumed`) |
 | `MP3_STREAM_INFO_CHANGED` | -5 | Sample rate, channels, or MPEG version changed mid-stream (recoverable; no PCM). Re-read the accessors, reconfigure, and call again |
 
-Use `result < 0` to check for any error. Use `result >= 0` for non-error (success or informational). `MP3_DECODE_ERROR` and `MP3_STREAM_INFO_CHANGED` are negative but recoverable. Handle them before a generic `result < 0` bail.
+Use `result < 0` to check for any error. Use `result >= 0` for non-error (success or informational). `MP3_DECODE_ERROR`, `MP3_STREAM_INFO_CHANGED`, and `MP3_OUTPUT_BUFFER_TOO_SMALL` are negative but recoverable. Handle them before a generic `result < 0` bail.
 
 ### Constants
 
