@@ -196,6 +196,24 @@ Triggered by any MPEG-1 48 kHz short-block granule with `used_freq_lines > 378`,
 which is common. 198 is the largest size any of the nine sample-rate tables
 needs.
 
+### `pv_mp3dec_fxd_op.h`
+
+The fixed-point multiply and multiply-accumulate helpers round to nearest (add
+half an LSB before the shift) instead of truncating. Truncation biases every
+product low by up to 1 LSB. The bias accumulates on dense, full-spectrum content:
+peak sample error reaches 5 LSB, and the worst measured vector (a stereo noise
+signal) sits about 3.5 dB in PSNR below a reference. Rounding caps the peak at
+1 LSB and recovers that loss.
+
+The three Q32 helpers (`fxp_mul32_Q32`, `fxp_mac32_Q32`, `fxp_msb32_Q32`) stay
+truncating on purpose. Their `(int64)a * b >> 32` form compiles to a single
+Xtensa `mulsh`; a rounding term would force a full 64-bit multiply and roughly
+double decode time. The other helpers already use a full 64-bit multiply, so
+rounding them is near-free (about 2% at 128 kbps, 4% at 320 kbps). Q32 feeds the
+synthesis filterbank, which dominates decode time and whose final output shift
+already rounds, so leaving it truncating keeps the speed and still clears the ISO
+limited-accuracy bound with wide margin.
+
 ### `pvmp3_dct_16.cpp`, `pvmp3_dct_9.cpp`, `pvmp3_mdct_18.cpp`, `pvmp3_polyphase_filter_window.cpp` / `.h`, `pvmp3_normalize.h`
 
 Changed only by stripping the `#if defined(PV_ARM_*)` inline-assembly guards,

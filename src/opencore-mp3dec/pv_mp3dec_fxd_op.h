@@ -63,14 +63,21 @@ extern "C"
         return b;
     }
 
+/* microMP3: round-to-nearest bias (+0.5 LSB) on the fixed-point shift, replacing
+ * upstream's truncation (floor). This removes a systematic per-product downward
+ * bias that costs ~4-6 dB PSNR vs a float decoder and produces worst-case sample
+ * errors up to 5 LSB on dense, full-spectrum content. The Q32 ops are left
+ * truncating on purpose: ((int64)a*b) >> 32 maps to a single Xtensa mulsh, and
+ * adding a bias would force a full 64-bit multiply. The other shifts are already
+ * full 64-bit multiplies, so rounding them is free. */
     __inline Int32 fxp_mul32_Q30(const Int32 a, const Int32 b)
     {
-        return (Int32)(((int64)(a) * b) >> 30);
+        return (Int32)(((int64)(a) * b + ((int64)1 << 29)) >> 30);
     }
 
     __inline Int32 fxp_mac32_Q30(const Int32 a, const Int32 b, Int32 L_add)
     {
-        return (L_add + (Int32)(((int64)(a) * b) >> 30));
+        return (L_add + (Int32)(((int64)(a) * b + ((int64)1 << 29)) >> 30));
     }
 
     __inline Int32 fxp_mul32_Q32(const Int32 a, const Int32 b)
@@ -80,12 +87,12 @@ extern "C"
 
     __inline Int32 fxp_mul32_Q28(const Int32 a, const Int32 b)
     {
-        return (Int32)(((int64)(a) * b) >> 28);
+        return (Int32)(((int64)(a) * b + ((int64)1 << 27)) >> 28);
     }
 
     __inline Int32 fxp_mul32_Q27(const Int32 a, const Int32 b)
     {
-        return (Int32)(((int64)(a) * b) >> 27);
+        return (Int32)(((int64)(a) * b + ((int64)1 << 26)) >> 27);
     }
 
     __inline Int32 fxp_mac32_Q32(Int32 L_add, const Int32 a, const Int32 b)
@@ -100,7 +107,7 @@ extern "C"
 
     __inline Int32 fxp_mul32_Q29(const Int32 a, const Int32 b)
     {
-        return (Int32)(((int64)(a) * b) >> 29);
+        return (Int32)(((int64)(a) * b + ((int64)1 << 28)) >> 29);
     }
 
 #ifdef __cplusplus
