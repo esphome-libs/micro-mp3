@@ -76,6 +76,34 @@ jobs:
       - name: Run tests
         run: ctest --test-dir tests/build --output-on-failure
 
+  conformance:
+    name: ISO conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # Single source of truth for the pinned vector commit: read it from the
+      # script so the cache key cannot drift from what the script checks out.
+      - name: Resolve pinned vector commit
+        run: |
+          ref="$(grep -oE '[0-9a-f]{40}' tests/conformance/run_conformance.sh | head -1)"
+          echo "MINIMP3_REF=${ref}" >> "$GITHUB_ENV"
+
+      # Cache the external minimp3 ISO vectors (~3 MB), keyed on the pinned
+      # commit so a ref bump invalidates it. On a hit, run_conformance.sh sees
+      # the vectors present and skips the clone entirely.
+      - name: Cache conformance vectors
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: tests/conformance/vectors
+          key: conformance-vectors-${{ env.MINIMP3_REF }}
+
+      # Builds the harness and decodes every gated Layer III vector against its
+      # ISO reference (full-accuracy PSNR + peak-difference gate).
+      - name: Build and run conformance gate
+        run: ./tests/conformance/run_conformance.sh
+
   fuzz:
     name: Fuzz build
     runs-on: ubuntu-latest
@@ -144,6 +172,7 @@ jobs:
       - lint
       - build
       - test
+      - conformance
       - fuzz
       - platformio
     runs-on: ubuntu-latest

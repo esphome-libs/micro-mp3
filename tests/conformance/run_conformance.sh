@@ -3,25 +3,30 @@
 # comparison harness, and decode every standard Layer III vector, comparing PCM
 # against the reference. Prototype: see conformance.cpp for the metric details.
 #
-# Vectors are pulled from lieff/minimp3 via a shallow, sparse checkout of just
-# the vectors/ directory into ./vectors (gitignored).
+# Vectors are pulled from lieff/minimp3 via a sparse checkout of just the
+# vectors/ directory into ./vectors (gitignored), pinned to a fixed commit
+# (MINIMP3_REF) so results are reproducible and the CI cache key is stable.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
 
 MINIMP3_REPO="${MINIMP3_REPO:-https://github.com/lieff/minimp3.git}"
+# Pinned minimp3 commit. Bump deliberately (and the CI cache key follows it).
+MINIMP3_REF="${MINIMP3_REF:-7b590fdcfa5a79c033e76eacc05d0c3e4c79f536}"
 VECTORS_DIR="$HERE/vectors"
 
-# --- fetch vectors (shallow + sparse: only vectors/) ---------------------------
+# --- fetch vectors (sparse, blob-filtered, pinned commit) ----------------------
 # Re-fetch when no .bit files are present, not just when the dir is empty: a
 # half-populated vectors/ (e.g. .pcm kept but .bit pruned) would otherwise skip
-# the fetch and let the run below pass while testing nothing.
+# the fetch and let the run below pass while testing nothing. No --depth so the
+# pinned commit is checkoutable; --filter=blob:none keeps the clone lean.
 if [ -z "$(ls "$VECTORS_DIR"/*.bit 2>/dev/null)" ]; then
-    echo ">> fetching conformance vectors from $MINIMP3_REPO"
+    echo ">> fetching conformance vectors from $MINIMP3_REPO @ ${MINIMP3_REF}"
     tmp="$(mktemp -d)"
-    git clone --depth 1 --filter=blob:none --sparse "$MINIMP3_REPO" "$tmp/minimp3"
+    git clone --filter=blob:none --sparse "$MINIMP3_REPO" "$tmp/minimp3"
     git -C "$tmp/minimp3" sparse-checkout set vectors
+    git -C "$tmp/minimp3" checkout --quiet "$MINIMP3_REF"
     mkdir -p "$VECTORS_DIR"
     cp "$tmp/minimp3"/vectors/*.bit "$tmp/minimp3"/vectors/*.pcm "$VECTORS_DIR"/
     rm -rf "$tmp"
