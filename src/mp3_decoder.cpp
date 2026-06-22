@@ -201,11 +201,13 @@ Mp3Result Mp3Decoder::decode(const uint8_t* input, size_t input_len, uint8_t* ou
 
     // The per-frame requirement can fall below MP3_MIN_OUTPUT_BUFFER_BYTES for
     // mono or MPEG2/2.5 streams, so check that rather than the worst case, and
-    // reject a too-small buffer here before setting up the decode. version_ and
-    // output_channels_ track the current stream format (a size-affecting change
-    // is caught by detect_format_change before any frame is decoded), so this
-    // bound matches the frame about to be decoded. OpenCore re-checks the same
-    // bound as a backstop (see setup_decode_ext).
+    // reject a too-small buffer before setting up the decode. version_ and
+    // output_channels_ hold the established stream format. A mid-stream change
+    // is not visible yet here; detect_format_change catches it during the
+    // decode and returns MP3_STREAM_INFO_CHANGED without decoding the frame, so
+    // the caller reconfigures and retries. This check then re-runs against the
+    // new format before that frame is decoded. OpenCore re-checks the bound as
+    // a backstop (see setup_decode_ext).
     if (output_size < this->get_samples_per_frame() * this->output_channels_ * sizeof(int16_t)) {
         return MP3_OUTPUT_BUFFER_TOO_SMALL;
     }
