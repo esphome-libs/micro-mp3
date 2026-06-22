@@ -32,7 +32,12 @@
  *
  * PSNR = 10*log10(32767^2 / MSE), MSE averaged over interleaved int16 samples.
  *
- * Usage: conformance <file.bit> <file.pcm> [--min-psnr X]
+ * The gate mirrors ISO/IEC 11172-4 "full accuracy": an RMS bound (checked here as
+ * PSNR, default 96 dB) plus a peak bound on the absolute sample difference
+ * (--max-diff, default 2). The ISO full-accuracy criterion is RMS < 2^-15/sqrt(12)
+ * (~0.29 LSB, ~101 dB) and max |diff| <= 2^-14 of full scale (2 LSB at 16-bit).
+ *
+ * Usage: conformance <file.bit> <file.pcm> [--min-psnr X] [--max-diff N]
  */
 
 #include "conformance_common.h"
@@ -89,15 +94,19 @@ Metrics compare_at(const std::vector<int16_t>& dec, const std::vector<uint8_t>& 
 
 int main(int argc, char* argv[]) {
     if (argc < 3) {
-        std::fprintf(stderr, "Usage: %s <file.bit> <file.pcm> [--min-psnr X]\n", argv[0]);
+        std::fprintf(stderr, "Usage: %s <file.bit> <file.pcm> [--min-psnr X] [--max-diff N]\n",
+                     argv[0]);
         return 2;
     }
     const char* bit_path = argv[1];
     const char* pcm_path = argv[2];
-    double min_psnr = 96.0;  // minimp3's gate; informational for fixed-point
+    double min_psnr = 96.0;  // RMS/PSNR gate (minimp3's threshold)
+    int max_diff = 2;        // ISO 11172-4 full-accuracy peak: 2^-14 of full scale = 2 LSB
     for (int i = 3; i < argc - 1; i++) {
         if (std::strcmp(argv[i], "--min-psnr") == 0) {
             min_psnr = std::atof(argv[i + 1]);
+        } else if (std::strcmp(argv[i], "--max-diff") == 0) {
+            max_diff = std::atoi(argv[i + 1]);
         }
     }
 
@@ -156,7 +165,9 @@ int main(int argc, char* argv[]) {
     // instead of letting the empty-overlap MSE==0 sentinel read as a pass.
     const bool no_data = pcm.empty() || at0.compared * 2 < ref_count;
     const double report_psnr = best.psnr;
-    const char* status = no_data ? "NODATA" : (report_psnr >= min_psnr ? "PASS" : "FAIL");
+    // Full-accuracy gate: RMS (as PSNR) and peak must both pass.
+    const bool pass = report_psnr >= min_psnr && best.max_diff <= max_diff;
+    const char* status = no_data ? "NODATA" : (pass ? "PASS" : "FAIL");
 
     std::printf(
         "%-44s rate=%u ch=%u dec/ch=%zu ref/ch=%zu errs=%zu | "
@@ -168,5 +179,5 @@ int main(int argc, char* argv[]) {
     if (no_data) {
         return 0;  // out of scope for this decoder, not a conformance failure
     }
-    return (report_psnr >= min_psnr) ? 0 : 1;
+    return pass ? 0 : 1;
 }

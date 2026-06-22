@@ -33,10 +33,17 @@ cmake -B build >/dev/null
 cmake --build build -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)" >/dev/null
 
 # --- run -----------------------------------------------------------------------
-# Accuracy gate. OpenCore is fixed-point; standard Layer III vectors land at
-# ~100-102 dB (max_diff 1-2). 96 dB matches minimp3's gate and is far above the
-# ISO 11172-4 "limited accuracy" bound.
+# Accuracy gate, modeled on ISO/IEC 11172-4 "full accuracy", which has two parts:
+#   - an RMS bound: difference RMS < 2^-15/sqrt(12) (~0.29 LSB at 16-bit, ~101 dB
+#     PSNR). We check it as PSNR with a 96 dB threshold (minimp3's gate): looser
+#     than full accuracy but far tighter than "limited accuracy" (2^-11/sqrt(12),
+#     ~4.6 LSB, ~77 dB).
+#   - a peak bound: max |diff| <= 2^-14 of full scale = 2 LSB at 16-bit. Enforced
+#     via --max-diff so a vector must satisfy BOTH bounds to pass.
+# OpenCore is fixed-point yet meets both: standard Layer III vectors land at
+# ~101-102 dB with max_diff 1-2.
 MIN_PSNR="${MIN_PSNR:-96}"
+MAX_DIFF="${MAX_DIFF:-2}"
 
 # Vectors excluded from the accuracy gate, with the reason:
 #   *sideinfo*          -- intentionally malformed (robustness, not accuracy)
@@ -65,7 +72,7 @@ for b in "$VECTORS_DIR"/l3-*.bit "$VECTORS_DIR"/M2L3_*.bit "$VECTORS_DIR"/ILL2_l
     p="${b%.bit}.pcm"
     [ -s "$p" ] || continue
     name="$(basename "$b")"
-    line="$(./build/conformance "$b" "$p" --min-psnr "$MIN_PSNR")" || true
+    line="$(./build/conformance "$b" "$p" --min-psnr "$MIN_PSNR" --max-diff "$MAX_DIFF")" || true
     echo "$line"
     if echo "$name" | grep -qE "$EXCLUDE_RE"; then
         continue  # known-divergent / out-of-scope; not gated
@@ -84,7 +91,7 @@ if [ "$gated" -eq 0 ]; then
     exit 1
 fi
 if [ "$fail" -ne 0 ]; then
-    echo "RESULT: conformance gate FAILED (>=1 gated Layer III vector below ${MIN_PSNR} dB)"
+    echo "RESULT: conformance gate FAILED (>=1 gated vector below ${MIN_PSNR} dB or over ${MAX_DIFF} LSB peak)"
     exit 1
 fi
-echo "RESULT: all ${gated} gated Layer III vectors >= ${MIN_PSNR} dB PSNR"
+echo "RESULT: all ${gated} gated Layer III vectors >= ${MIN_PSNR} dB PSNR and <= ${MAX_DIFF} LSB peak"
