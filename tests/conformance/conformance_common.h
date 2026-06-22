@@ -72,7 +72,15 @@ inline bool decode_all(const std::vector<uint8_t>& bitstream, std::vector<int16_
             decoder.decode(ptr, remaining, reinterpret_cast<uint8_t*>(scratch.data()),
                            scratch.size() * sizeof(int16_t), consumed, samples);
 
-        if (result == micro_mp3::MP3_STREAM_INFO_READY) {
+        // MP3_STREAM_INFO_READY (initial probe) and MP3_STREAM_INFO_CHANGED (a
+        // mid-stream sample-rate / channel / version switch) are both reported
+        // before the frame is decoded, emit no PCM, and just ask the caller to
+        // re-read the format. Adopt it and retry the frame; the per-frame append
+        // below then uses the updated channel count, so a mono<->stereo switch is
+        // emitted in the stream's native layout -- matching ISO references like
+        // l3-he_mode that change format mid-file.
+        if (result == micro_mp3::MP3_STREAM_INFO_READY ||
+            result == micro_mp3::MP3_STREAM_INFO_CHANGED) {
             info.sample_rate = decoder.get_sample_rate();
             info.channels = decoder.get_channels();
             ptr += consumed;
