@@ -763,12 +763,15 @@ void Mp3Decoder::setup_decode_ext(tPVMP3DecoderExternal& ext, uint8_t* output, s
     ext.crcEnabled = 0;
     ext.pOutputBuffer = reinterpret_cast<int16*>(output);
 
-    // Declare the caller's actual output capacity in int16 samples. OpenCore
-    // checks this against its computed per-frame size right after parsing the
-    // header and returns OUTPUT_BUFFER_TOO_SMALL before running any DSP or
-    // writing any PCM, so it cannot overrun a buffer smaller than the MPEG1-
-    // stereo worst case. This backstops the size check in decode().
-    ext.outputFrameSize = static_cast<int32>(output_size / sizeof(int16_t));
+    // Declare the caller's output capacity in int16 samples, capped at the
+    // worst-case frame: no frame needs more, and the cap keeps the size_t to
+    // int32 conversion in range for an outsized buffer. OpenCore checks this
+    // against its computed per-frame size right after parsing the header and
+    // returns OUTPUT_BUFFER_TOO_SMALL before running any DSP or writing any
+    // PCM, so it cannot overrun a buffer smaller than that worst case. This
+    // backstops the size check in decode().
+    ext.outputFrameSize =
+        static_cast<int32>(std::min(output_size, MP3_MIN_OUTPUT_BUFFER_BYTES) / sizeof(int16_t));
 }
 
 Mp3Result Mp3Decoder::decode_direct(tPVMP3DecoderExternal& ext, const uint8_t* input,
