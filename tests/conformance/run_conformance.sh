@@ -17,19 +17,21 @@ MINIMP3_REF="${MINIMP3_REF:-7b590fdcfa5a79c033e76eacc05d0c3e4c79f536}"
 VECTORS_DIR="$HERE/vectors"
 
 # --- fetch vectors (sparse, blob-filtered, pinned commit) ----------------------
-# Re-fetch when no .bit files are present, not just when the dir is empty: a
-# half-populated vectors/ (e.g. .pcm kept but .bit pruned) would otherwise skip
-# the fetch and let the run below pass while testing nothing. No --depth so the
-# pinned commit is checkoutable; --filter=blob:none keeps the clone lean.
-if [ -z "$(ls "$VECTORS_DIR"/*.bit 2>/dev/null)" ]; then
+# Re-fetch unless BOTH .bit and .pcm files are present, not just when the dir is
+# empty: a half-populated vectors/ (e.g. .pcm pruned but .bit kept, or vice
+# versa) would otherwise skip the fetch and let the run below silently skip the
+# vectors whose reference went missing. Requiring both repairs a partial cache.
+# No --depth so the pinned commit is checkoutable; --filter=blob:none keeps the
+# clone lean.
+if [ -z "$(ls "$VECTORS_DIR"/*.bit 2>/dev/null)" ] || [ -z "$(ls "$VECTORS_DIR"/*.pcm 2>/dev/null)" ]; then
     echo ">> fetching conformance vectors from $MINIMP3_REPO @ ${MINIMP3_REF}"
     tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT  # clean up even if a clone/checkout below fails early
     git clone --filter=blob:none --sparse "$MINIMP3_REPO" "$tmp/minimp3"
     git -C "$tmp/minimp3" sparse-checkout set vectors
     git -C "$tmp/minimp3" checkout --quiet "$MINIMP3_REF"
     mkdir -p "$VECTORS_DIR"
     cp "$tmp/minimp3"/vectors/*.bit "$tmp/minimp3"/vectors/*.pcm "$VECTORS_DIR"/
-    rm -rf "$tmp"
     echo ">> fetched $(ls "$VECTORS_DIR"/*.bit | wc -l | tr -d ' ') bitstreams"
 fi
 

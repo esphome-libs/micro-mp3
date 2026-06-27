@@ -87,7 +87,10 @@ jobs:
       # script so the cache key cannot drift from what the script checks out.
       - name: Resolve pinned vector commit
         run: |
-          ref="$(grep -oE '[0-9a-f]{40}' tests/conformance/run_conformance.sh | head -1)"
+          # Anchor to the MINIMP3_REF assignment so an unrelated 40-hex string
+          # elsewhere in the script can never hijack the cache key.
+          ref="$(grep -oE 'MINIMP3_REF:-[0-9a-f]{40}' tests/conformance/run_conformance.sh | head -1)"
+          ref="${ref#MINIMP3_REF:-}"
           echo "MINIMP3_REF=${ref}" >> "$GITHUB_ENV"
 
       # Cache the external minimp3 ISO vectors (~3 MB), keyed on the pinned

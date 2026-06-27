@@ -35,6 +35,10 @@ namespace {
 
 using conformance::read16le;
 
+// M_PI is a POSIX extension, not ISO C++, so it can be absent under strict
+// standard modes. Derive pi portably instead.
+const double kPi = std::acos(-1.0);
+
 // In-place iterative radix-2 FFT (re/im interleaved-as-separate arrays).
 void fft(std::vector<double>& re, std::vector<double>& im) {
     const size_t n = re.size();
@@ -48,7 +52,7 @@ void fft(std::vector<double>& re, std::vector<double>& im) {
         }
     }
     for (size_t len = 2; len <= n; len <<= 1) {
-        const double ang = -2.0 * M_PI / static_cast<double>(len);
+        const double ang = -2.0 * kPi / static_cast<double>(len);
         const double wr = std::cos(ang), wi = std::sin(ang);
         for (size_t i = 0; i < n; i += len) {
             double cr = 1.0, ci = 0.0;
@@ -74,7 +78,7 @@ void power_spectrum(const std::vector<double>& sig, std::vector<double>& psd) {
     psd.assign(N / 2, 0.0);
     if (sig.size() < N) return;
     std::vector<double> w(N);
-    for (size_t i = 0; i < N; i++) w[i] = 0.5 - 0.5 * std::cos(2.0 * M_PI * i / (N - 1));
+    for (size_t i = 0; i < N; i++) w[i] = 0.5 - 0.5 * std::cos(2.0 * kPi * i / (N - 1));
     size_t blocks = 0;
     for (size_t off = 0; off + N <= sig.size(); off += N / 2) {
         std::vector<double> re(N), im(N, 0.0);

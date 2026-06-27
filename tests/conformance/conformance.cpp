@@ -48,6 +48,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -85,8 +86,15 @@ Metrics compare_at(const std::vector<int16_t>& dec, const std::vector<uint8_t>& 
         n++;
     }
     m.compared = n;
-    const double mse = n ? mse_sum / static_cast<double>(n) : 0.0;
-    m.psnr = (mse == 0.0) ? 99.0 : 10.0 * std::log10((32767.0 * 32767.0) / mse);
+    if (n == 0) {
+        m.psnr = 0.0;  // nothing overlapped: not a match, report as worst-case
+        return m;
+    }
+    const double mse = mse_sum / static_cast<double>(n);
+    // mse == 0 is a bit-exact match: report +inf rather than a finite sentinel so
+    // a perfect decode never under-reports and never fails a tightened gate.
+    m.psnr = (mse == 0.0) ? std::numeric_limits<double>::infinity()
+                          : 10.0 * std::log10((32767.0 * 32767.0) / mse);
     return m;
 }
 

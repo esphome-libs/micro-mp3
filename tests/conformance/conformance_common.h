@@ -36,6 +36,9 @@ inline bool read_file(const char* path, std::vector<uint8_t>& out) {
         return false;
     }
     const std::streamsize size = f.tellg();
+    if (size < 0) {
+        return false;  // tellg() failed; a negative size would resize() to ~SIZE_MAX
+    }
     f.seekg(0, std::ios::beg);
     out.resize(static_cast<size_t>(size));
     return !(size > 0 && !f.read(reinterpret_cast<char*>(out.data()), size));
