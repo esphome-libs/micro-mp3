@@ -217,7 +217,7 @@ cmake -DENABLE_SANITIZERS=ON -B build && cmake --build build
 ./build/mp3_to_wav input.mp3 output.wav
 ```
 
-Add `-DENABLE_WERROR=ON` to either cmake command to treat warnings as errors (off by default). A libFuzzer harness lives in [tests/fuzz/](tests/fuzz/) for fuzzing the streaming decoder; see its README for build and run instructions.
+Add `-DENABLE_WERROR=ON` to either cmake command to treat warnings as errors (off by default). A libFuzzer harness lives in [tests/fuzz/](tests/fuzz/) for fuzzing the streaming decoder; see its README for build and run instructions. An ISO conformance gate lives in [tests/conformance/](tests/conformance/), decoding the ISO/IEC 11172-4 and 13818-4 Layer III vectors and comparing PCM against the reference output shipped with each vector at a full-accuracy PSNR and peak threshold; see its README for the accuracy criteria and how to run it.
 
 ## License
 
