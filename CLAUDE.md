@@ -18,6 +18,7 @@ examples/decode_benchmark/  # ESP32 benchmark example (esp32, esp32s3, esp32p4)
 host_examples/mp3_to_wav/   # mp3_to_wav CLI decoder
 tests/                      # Mp3Decoder unit tests (ctest; fixtures in tests/data/)
 tests/fuzz/                 # libFuzzer harness (self-contained CMake project, not part of ctest)
+tests/conformance/          # ISO 11172-4/13818-4 Layer III accuracy gate (self-contained CMake project, not part of ctest)
 script/clang-tidy.sh        # Lint wrapper (uses the mp3_to_wav build's compile_commands.json)
 ```
 
