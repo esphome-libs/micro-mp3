@@ -1,5 +1,5 @@
 # cmake/host.cmake
-# Host platform build configuration for micro-mp3
+# Host platform build configuration for microMP3
 
 # Guard against multiple inclusion
 if(__mp3_host_defined)
@@ -43,8 +43,9 @@ function(mp3_configure_host TARGET SOURCE_DIR)
 
     # Optimization flags. Drop to -O1 under sanitizers so ASan/UBSan reports
     # map cleanly back to source lines; -O2 inlining/reordering otherwise
-    # muddies the diagnostics. Host builds otherwise use -O2 (ESP-IDF uses -O3
-    # for decoder performance). ENABLE_SANITIZERS is unset on the ESP-IDF path.
+    # muddies the diagnostics. Otherwise use -O2. The per-file -Os tuning the
+    # ESP-IDF build applies is for the embedded targets and is not used here;
+    # host is a test/CLI build, not a performance target.
     target_compile_options(${TARGET} PRIVATE -ffunction-sections -fdata-sections)
     if(ENABLE_SANITIZERS)
         target_compile_options(${TARGET} PRIVATE -O1)

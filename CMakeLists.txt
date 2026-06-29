@@ -1,12 +1,11 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.18)
 
-# CMakeLists.txt for micro-mp3
+# CMakeLists.txt for microMP3
 # Supports both ESP-IDF component builds and standalone host builds
 #
 # Structure:
 #   cmake/sources.cmake   - Source file definitions (references src/opencore-mp3dec/)
-#   cmake/functions.cmake - Helper functions
-#   cmake/esp-idf.cmake   - ESP-IDF specific configuration
+#   cmake/esp-idf.cmake   - ESP-IDF specific configuration (incl. optimization flags)
 #   cmake/host.cmake      - Host platform configuration
 
 # ==============================================================================
@@ -31,7 +30,6 @@ endif()
 # ==============================================================================
 
 include(${MP3_COMPONENT_DIR}/cmake/sources.cmake)
-include(${MP3_COMPONENT_DIR}/cmake/functions.cmake)
 
 # ==============================================================================
 # ESP-IDF Build

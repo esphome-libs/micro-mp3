@@ -1,5 +1,5 @@
 # cmake/sources.cmake
-# Source file definitions for micro-mp3
+# Source file definitions for microMP3
 # Separated from main CMakeLists.txt for maintainability
 #
 # OpenCore MP3 decoder sources are in src/opencore-mp3dec/
