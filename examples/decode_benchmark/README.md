@@ -78,33 +78,33 @@ I (1242) DECODE_BENCH: Audio: 30s Beethoven Symphony No. 3 (from 1:00), 48kHz st
 I (1252) DECODE_BENCH:   MP3 64kbps:  240744 bytes
 I (1252) DECODE_BENCH:   MP3 128kbps: 481128 bytes
 I (1262) DECODE_BENCH:   MP3 320kbps: 1202280 bytes
-I (1262) DECODE_BENCH: Free heap: 8719472 bytes
-I (1272) DECODE_BENCH: Free PSRAM: 8386148 bytes
+I (1262) DECODE_BENCH: Free heap: 17107948 bytes
+I (1272) DECODE_BENCH: Free PSRAM: 16774624 bytes
 I (1272) DECODE_BENCH: Free Internal: 333324 bytes
 I (1282) DECODE_BENCH: Concurrent decode test: up to 4 independent tasks
 
 I (1292) DECODE_BENCH: --- MP3 64kbps (48kHz stereo) - 1 concurrent task ---
-I (3292) DECODE_BENCH: Task 0 starting MP3 decode on core 0...
-I (3292) DECODE_BENCH: Task 0 finished (1931 ms)
-I (3292) DECODE_BENCH: Task 0: Frame (us): min=1440 max=2613 avg=1540.0 sd=57.4 (n=1251)
-I (3292) DECODE_BENCH: Task 0: Total: 1931 ms (setup: 0 ms, decode: 1931 ms), 30.0s audio, RTF: 0.064 (15.5x), decode RTF: 0.064 (15.5x), 48000 Hz, 2 ch, 64 kbps, core 0
-I (3302) DECODE_BENCH: Task 0: Decoder footprint: 28172 bytes (internal: 0, PSRAM: 28172) (decoder state + PCM buffer)
+I (1302) DECODE_BENCH: Task 0 starting MP3 decode on core 0...
+I (3142) DECODE_BENCH: Task 0 finished (1834 ms)
+I (3142) DECODE_BENCH: Task 0: Frame (us): min=1371 max=2533 avg=1462.1 sd=52.5 (n=1251)
+I (3142) DECODE_BENCH: Task 0: Total: 1834 ms (setup: 0 ms, decode: 1834 ms), 30.0s audio, RTF: 0.061 (16.4x), decode RTF: 0.061 (16.4x), 48000 Hz, 2 ch, 64 kbps, core 0
+I (3152) DECODE_BENCH: Task 0: Decoder footprint: 28172 bytes (internal: 0, PSRAM: 28172) (decoder state + PCM buffer)
 
 ...
 
-I (16342) DECODE_BENCH: --- Summary (MP3 64kbps (48kHz stereo)) ---
-I (16352) DECODE_BENCH:   1 task:     1937 ms
-I (16352) DECODE_BENCH:   2 tasks:    2221 ms
-I (16362) DECODE_BENCH:   3 tasks:    4480 ms
-I (16362) DECODE_BENCH:   4 tasks:    5756 ms
+I (15332) DECODE_BENCH: --- Summary (MP3 64kbps (48kHz stereo)) ---
+I (15342) DECODE_BENCH:   1 task:     1840 ms
+I (15342) DECODE_BENCH:   2 tasks:    2107 ms
+I (15352) DECODE_BENCH:   3 tasks:    4295 ms
+I (15352) DECODE_BENCH:   4 tasks:    5552 ms
 
 ...
 
-I (57162) DECODE_BENCH: All decodes successful: YES
-I (57172) DECODE_BENCH: Free heap: 8719168 bytes
-I (57172) DECODE_BENCH: Min free heap ever:     8584080 bytes
-I (57182) DECODE_BENCH: Min free internal ever: 310620 bytes
-I (57182) DECODE_BENCH: Min free PSRAM ever:    8273460 bytes
+I (53282) DECODE_BENCH: All decodes successful: YES
+I (53282) DECODE_BENCH: Free heap: 17107644 bytes
+I (53292) DECODE_BENCH: Min free heap ever:     16972556 bytes
+I (53292) DECODE_BENCH: Min free internal ever: 310620 bytes
+I (53302) DECODE_BENCH: Min free PSRAM ever:    16661936 bytes
 ```
 
 The MP3 header probe is a few-byte parse, so `setup` is effectively 0 ms and `decode RTF` tracks the overall RTF; the split is reported for parity with the other codec benchmarks. The decoder footprint lands entirely in PSRAM here because decoder state defaults to PSRAM and `MALLOC_CAP_DEFAULT` resolves to PSRAM under this configuration; it is reported only for single-task runs.
@@ -130,30 +130,30 @@ The benchmark shows how performance scales with concurrent tasks. Each stream de
 
 | Tasks | Wall-clock | Per-task RTF | Notes |
 | ----- | ---------- | ------------ | ----- |
-| 1 | 1.9s | 0.064 (15.5x) | Single task on one core |
-| 2 | 2.2s | 0.074 (13.6x) | One task per core |
-| 3 | 4.5s | ~0.149 (6.7x) | Core 0 has 2 tasks, core 1 has 1 |
-| 4 | 5.8s | ~0.191 (5.2x) | Two tasks per core |
+| 1 | 1.8s | 0.061 (16.4x) | Single task on one core |
+| 2 | 2.1s | 0.070 (14.3x) | One task per core |
+| 3 | 4.3s | ~0.143 (7.0x) | Core 0 has 2 tasks, core 1 has 1 |
+| 4 | 5.6s | ~0.185 (5.4x) | Two tasks per core |
 
 **MP3 128kbps (48kHz stereo)**:
 
 | Tasks | Wall-clock | Per-task RTF | Notes |
 | ----- | ---------- | ------------ | ----- |
-| 1 | 2.5s | 0.082 (12.2x) | Single task on one core |
-| 2 | 2.8s | 0.094 (10.7x) | One task per core |
-| 3 | 5.6s | ~0.187 (5.3x) | Core 0 has 2 tasks, core 1 has 1 |
-| 4 | 6.9s | ~0.228 (4.4x) | Two tasks per core |
+| 1 | 2.3s | 0.076 (13.1x) | Single task on one core |
+| 2 | 2.7s | 0.088 (11.3x) | One task per core |
+| 3 | 5.3s | ~0.176 (5.7x) | Core 0 has 2 tasks, core 1 has 1 |
+| 4 | 6.5s | ~0.215 (4.7x) | Two tasks per core |
 
 **MP3 320kbps (48kHz stereo)**:
 
 | Tasks | Wall-clock | Per-task RTF | Notes |
 | ----- | ---------- | ------------ | ----- |
-| 1 | 3.1s | 0.102 (9.8x) | Single task on one core |
-| 2 | 3.6s | 0.120 (8.4x) | One task per core |
-| 3 | 7.0s | ~0.233 (4.3x) | Core 0 has 2 tasks, core 1 has 1 |
-| 4 | 8.1s | ~0.270 (3.7x) | Two tasks per core |
+| 1 | 2.8s | 0.094 (10.6x) | Single task on one core |
+| 2 | 3.4s | 0.112 (9.0x) | One task per core |
+| 3 | 6.5s | ~0.217 (4.6x) | Core 0 has 2 tasks, core 1 has 1 |
+| 4 | 8.0s | ~0.265 (3.8x) | Two tasks per core |
 
-With 2 tasks (one per core), combined throughput nearly doubles while wall-clock time only grows ~15-17%. The 3- and 4-task cases are slower per task because tasks share a core: the contention shows up as large standard deviations and high max frame times. Higher bitrates cost more per frame, with 320kbps running roughly 60% slower per frame than 64kbps.
+With 2 tasks (one per core), combined throughput nearly doubles while wall-clock time only grows ~15-19%. The 3- and 4-task cases are slower per task because tasks share a core: the contention shows up as large standard deviations and high max frame times. Higher bitrates cost more per frame, with 320kbps running roughly 55% slower per frame than 64kbps.
 
 #### ESP32-P4 (360 MHz, hex PSRAM)
 
@@ -161,28 +161,28 @@ With 2 tasks (one per core), combined throughput nearly doubles while wall-clock
 
 | Tasks | Wall-clock | Per-task RTF | Notes |
 | ----- | ---------- | ------------ | ----- |
-| 1 | 1.2s | 0.040 (25.0x) | Single task on one core |
-| 2 | 1.2s | 0.040 (24.8x) | One task per core, ~50x combined |
-| 3 | 2.4s | ~0.081 (12.4x) | Core 0 has 2 tasks, core 1 has 1 |
-| 4 | 2.7s | ~0.088 (11.4x) | Two tasks per core |
+| 1 | 1.2s | 0.039 (25.9x) | Single task on one core |
+| 2 | 1.2s | 0.039 (25.6x) | One task per core, ~51x combined |
+| 3 | 2.3s | ~0.078 (12.9x) | Core 0 has 2 tasks, core 1 has 1 |
+| 4 | 2.5s | ~0.084 (11.9x) | Two tasks per core |
 
 **MP3 128kbps (48kHz stereo)**:
 
 | Tasks | Wall-clock | Per-task RTF | Notes |
 | ----- | ---------- | ------------ | ----- |
-| 1 | 1.6s | 0.052 (19.4x) | Single task on one core |
-| 2 | 1.6s | 0.052 (19.2x) | One task per core, ~38x combined |
-| 3 | 3.1s | ~0.104 (9.6x) | Core 0 has 2 tasks, core 1 has 1 |
-| 4 | 3.4s | ~0.114 (8.7x) | Two tasks per core |
+| 1 | 1.5s | 0.049 (20.5x) | Single task on one core |
+| 2 | 1.5s | 0.049 (20.3x) | One task per core, ~41x combined |
+| 3 | 3.0s | ~0.098 (10.2x) | Core 0 has 2 tasks, core 1 has 1 |
+| 4 | 3.2s | ~0.108 (9.3x) | Two tasks per core |
 
 **MP3 320kbps (48kHz stereo)**:
 
 | Tasks | Wall-clock | Per-task RTF | Notes |
 | ----- | ---------- | ------------ | ----- |
-| 1 | 2.0s | 0.065 (15.3x) | Single task on one core |
-| 2 | 2.0s | 0.066 (15.1x) | One task per core, ~30x combined |
-| 3 | 4.0s | ~0.133 (7.5x) | Core 0 has 2 tasks, core 1 has 1 |
-| 4 | 4.5s | ~0.148 (6.7x) | Two tasks per core |
+| 1 | 1.8s | 0.060 (16.6x) | Single task on one core |
+| 2 | 1.8s | 0.061 (16.4x) | One task per core, ~33x combined |
+| 3 | 3.7s | ~0.122 (8.2x) | Core 0 has 2 tasks, core 1 has 1 |
+| 4 | 4.1s | ~0.135 (7.4x) | Two tasks per core |
 
 The P4 decodes about 1.6x faster per stream than the S3 and scales nearly linearly to two tasks (one per core), where the second stream barely moves wall-clock time, before bus contention shows up at three and four.
 
@@ -194,22 +194,22 @@ The plain single-core-class ESP32 caps the benchmark at two tasks via `-DDECODE_
 
 | Tasks | Wall-clock | Per-task RTF | Notes |
 | ----- | ---------- | ------------ | ----- |
-| 1 | 8.2s | 0.274 (3.6x) | Single task on one core |
-| 2 | 21.3s | ~0.709 (1.4x) | One task per core |
+| 1 | 8.2s | 0.272 (3.7x) | Single task on one core |
+| 2 | 21.0s | ~0.700 (1.4x) | One task per core |
 
 **MP3 128kbps (48kHz stereo)**:
 
 | Tasks | Wall-clock | Per-task RTF | Notes |
 | ----- | ---------- | ------------ | ----- |
-| 1 | 9.6s | 0.319 (3.1x) | Single task on one core |
-| 2 | 22.8s | ~0.759 (1.3x) | One task per core |
+| 1 | 9.4s | 0.315 (3.2x) | Single task on one core |
+| 2 | 22.2s | ~0.739 (1.4x) | One task per core |
 
 **MP3 320kbps (48kHz stereo)**:
 
 | Tasks | Wall-clock | Per-task RTF | Notes |
 | ----- | ---------- | ------------ | ----- |
-| 1 | 10.9s | 0.364 (2.7x) | Single task on one core |
-| 2 | 24.8s | ~0.826 (1.2x) | One task per core |
+| 1 | 10.7s | 0.357 (2.8x) | Single task on one core |
+| 2 | 23.8s | ~0.795 (1.3x) | One task per core |
 
 A single MP3 stream decodes in real-time on the ESP32 (about 4x slower per stream than the S3, due to slower quad PSRAM and no cache optimizations). Two concurrent streams still clear real-time, but per-task time more than doubles under heavy PSRAM bus contention, so three or more would fall behind.
 

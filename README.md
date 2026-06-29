@@ -172,22 +172,22 @@ Decoding 48 kHz stereo MP3, single stream (128 kbps clip):
 
 | Chip | Clock | Wall-clock (30s audio) | Per-task RTF | Throughput |
 | ---- | ----- | ---------------------- | ------------ | ---------- |
-| ESP32 | 240 MHz | 9.6s | 0.319 | 3.1x real-time |
-| ESP32-S3 | 240 MHz | 2.5s | 0.082 | 12.2x real-time |
-| ESP32-P4 | 360 MHz | 1.6s | 0.052 | 19.4x real-time |
+| ESP32 | 240 MHz | 9.4s | 0.315 | 3.2x real-time |
+| ESP32-S3 | 240 MHz | 2.3s | 0.076 | 13.1x real-time |
+| ESP32-P4 | 360 MHz | 1.5s | 0.049 | 20.5x real-time |
 
-Decoder state stays in PSRAM by default on every target (the measured footprint lands entirely in PSRAM). Even on the original ESP32, where PSRAM is much slower than internal SRAM, a single MP3 stream clears real-time. The ESP32-P4 decodes about 1.6x faster per stream than the ESP32-S3. Decode cost scales with bitrate: the 320 kbps clip runs roughly 60% slower per frame than the 64 kbps clip.
+Decoder state stays in PSRAM by default on every target (the measured footprint lands entirely in PSRAM). Even on the original ESP32, where PSRAM is much slower than internal SRAM, a single MP3 stream clears real-time. The ESP32-P4 decodes about 1.6x faster per stream than the ESP32-S3. Decode cost scales with bitrate: the 320 kbps clip runs roughly 55% slower per frame than the 64 kbps clip.
 
 The dual-core ESP32-S3 also scales across concurrent streams, each decoder instance on its own task and core (128 kbps clip):
 
 | Concurrent tasks | Wall-clock (30s audio) | Per-task RTF | Throughput |
 | ---------------- | ---------------------- | ------------ | ---------- |
-| 1 | 2.5s | 0.082 | 12.2x real-time |
-| 2 (one per core) | 2.8s | 0.094 | 10.7x real-time each |
-| 3 | 5.6s | 0.187 | 5.3x real-time |
-| 4 | 6.9s | 0.228 | 4.4x real-time |
+| 1 | 2.3s | 0.076 | 13.1x real-time |
+| 2 (one per core) | 2.7s | 0.088 | 11.3x real-time each |
+| 3 | 5.3s | 0.176 | 5.7x real-time |
+| 4 | 6.5s | 0.215 | 4.7x real-time |
 
-Each stream decodes on a single thread. Running a second stream on the other core barely raises wall-clock time (2.8s against 2.5s) while nearly doubling combined throughput, but the two cores share one PSRAM bus, so adding a third and fourth task slows every task under contention. See [examples/decode_benchmark/README.md](examples/decode_benchmark/README.md) for per-frame timing statistics across all three bitrates, the test clip details, and instructions for running your own benchmark.
+Each stream decodes on a single thread. Running a second stream on the other core barely raises wall-clock time (2.7s against 2.3s) while nearly doubling combined throughput, but the two cores share one PSRAM bus, so adding a third and fourth task slows every task under contention. See [examples/decode_benchmark/README.md](examples/decode_benchmark/README.md) for per-frame timing statistics across all three bitrates, the test clip details, and instructions for running your own benchmark.
 
 ## Memory Usage
 
