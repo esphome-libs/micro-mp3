@@ -103,9 +103,9 @@ Two fixes:
    so it was removed.
 
 The big-values region loops drive the now-inline pair decoders (see
-`pv_mp3_huffman.h`) through a `huffman_decode_pairs(h, is, start, end)` helper
-that branches on `h->linbits` once per region instead of dispatching through a
-per-pair function pointer. The loop split preserves the per-region table
+`pv_mp3_huffman.h`) through a `huffman_decode_pairs(h, is, start, end, pMainData)`
+helper that branches on `h->linbits` once per region instead of dispatching through
+a per-pair function pointer.
 selection and the `i` index passed to count1 decoding; decoded output is
 unchanged.
 
