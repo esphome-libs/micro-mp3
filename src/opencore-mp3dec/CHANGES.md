@@ -102,6 +102,13 @@ Two fixes:
    `is[572..575]`). This makes the old post-decode `(i-2) >= 576` cleanup dead,
    so it was removed.
 
+The big-values region loops drive the now-inline pair decoders (see
+`pv_mp3_huffman.h`) through a `huffman_decode_pairs(h, is, start, end, pMainData)`
+helper that branches on `h->linbits` once per region instead of dispatching through
+a per-pair function pointer.
+selection and the `i` index passed to count1 decoding; decoded output is
+unchanged.
+
 ### `pvmp3_dequantize_sample.cpp`
 
 Two fixes in the short-block dequantization path:
@@ -220,6 +227,25 @@ Changed only by stripping the `#if defined(PV_ARM_*)` inline-assembly guards,
 leaving the C path each file already compiled. See "Platform-specific back-ends
 and build files" under Removed Files for the rationale.
 
+### `pvmp3_getbits.h`
+
+The bit-buffer readers `getNbits`, `getUpTo9bits`, `getUpTo17bits`, and
+`get1bit` are defined here as `static inline`, previously out-of-line in the
+now-removed `pvmp3_getbits.cpp`. They are leaf functions called once per Huffman
+codeword and per sign / linbits field; inlining keeps `usedBits` in a register
+across a codeword and folds the shift amounts from the constant `neededBits`.
+Decoded output is unchanged.
+
+### `pv_mp3_huffman.h`
+
+The per-codeword decoders `pvmp3_huffman_quad_decoding`,
+`pvmp3_huffman_pair_decoding`, and `pvmp3_huffman_pair_decoding_linbits` are
+defined here as `static inline`, previously out-of-line in the now-removed
+`pvmp3_huffman_decoding.cpp`. `pvmp3_huffman_parsing()` now calls them directly
+instead of through a per-region function pointer (see that file), so the bodies
+fold into its big-values loop and only the per-table `h->pdec_huff_tab` lookup
+stays indirect. Decoded output is unchanged.
+
 ### `pvmp3_audio_type_defs.h`, `mp3_mem_funcs.h`
 
 Drop the dependency on PacketVideo's external OSCL library, which is not part of
@@ -241,6 +267,12 @@ provided by `pvmp3_framedecoder.cpp`. Their only use was the now-removed
 
 Defined only `NEW_PV_MP3_DECODER`, which is never referenced; the header was
 never included.
+
+### `pvmp3_getbits.cpp`, `pvmp3_huffman_decoding.cpp`
+
+Held the bit-buffer readers and per-codeword Huffman decoders, now `static
+inline` in `pvmp3_getbits.h` and `pv_mp3_huffman.h` respectively (see those
+entries under Modified Files).
 
 ### Platform-specific back-ends and build files
 
