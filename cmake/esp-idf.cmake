@@ -43,7 +43,8 @@ endfunction()
 # set_source_files_properties needs TARGET_DIRECTORY so the property lands in the
 # scope where TARGET was defined: under ESP-IDF the component library is created
 # in a different scope than this helper, and a plain call there is silently
-# ignored (the files would stay at -O2).
+# ignored (the files would stay at -O2). TARGET_DIRECTORY requires CMake 3.18,
+# which is why the top-level cmake_minimum_required is 3.18.
 #
 # Arguments:
 #   TARGET       - the library target the sources are compiled into

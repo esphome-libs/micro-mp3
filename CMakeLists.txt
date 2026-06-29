@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.18)
 
 # CMakeLists.txt for microMP3
 # Supports both ESP-IDF component builds and standalone host builds
