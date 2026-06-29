@@ -38,8 +38,6 @@ function(mp3_get_sources)
         ${MP3_DIR}/pvmp3_get_main_data_size.cpp
         ${MP3_DIR}/pvmp3_get_scale_factors.cpp
         ${MP3_DIR}/pvmp3_get_side_info.cpp
-        ${MP3_DIR}/pvmp3_getbits.cpp
-        ${MP3_DIR}/pvmp3_huffman_decoding.cpp
         ${MP3_DIR}/pvmp3_huffman_parsing.cpp
         ${MP3_DIR}/pvmp3_imdct_synth.cpp
         ${MP3_DIR}/pvmp3_mdct_18.cpp

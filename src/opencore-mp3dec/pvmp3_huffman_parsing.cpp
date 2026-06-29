@@ -122,6 +122,31 @@
 ; FUNCTION CODE
 ----------------------------------------------------------------------------*/
 
+/*
+ * Decode the big-values pairs in [start, end) with table h. The pair vs.
+ * linbits choice depends only on h->linbits, so branch once per region rather
+ * than through a per-pair function pointer; the inline decoders fold into the
+ * loops.
+ */
+static void huffman_decode_pairs(struct huffcodetab *h, int32 *is,
+                                 int32 start, int32 end, tmp3Bits *pMainData)
+{
+    if (h->linbits)
+    {
+        for (int32 i = start; i < end; i += 2)
+        {
+            pvmp3_huffman_pair_decoding_linbits(h, &is[i], pMainData);
+        }
+    }
+    else
+    {
+        for (int32 i = start; i < end; i += 2)
+        {
+            pvmp3_huffman_pair_decoding(h, &is[i], pMainData);
+        }
+    }
+}
+
 int32 pvmp3_huffman_parsing(int32 is[SUBBANDS_NUMBER*FILTERBANK_BANDS],
                             granuleInfo *grInfo,
                             tmp3dec_file   *pVars,
@@ -135,7 +160,6 @@ int32 pvmp3_huffman_parsing(int32 is[SUBBANDS_NUMBER*FILTERBANK_BANDS],
     int32 region2Start;
     int32 sfreq;
     uint32 grBits;
-    void(*pt_huff)(struct huffcodetab *, int32 *, tmp3Bits *);
     struct huffcodetab *h;
 
     tmp3Bits *pMainData = &pVars->mainDataStream;
@@ -198,100 +222,35 @@ int32 pvmp3_huffman_parsing(int32 is[SUBBANDS_NUMBER*FILTERBANK_BANDS],
         grInfo->big_values = (FILTERBANK_BANDS * SUBBANDS_NUMBER >> 1);
     }
 
-    if ((grInfo->big_values << 1) > (uint32)region2Start)
+    int32 bigValuesEnd = (int32)(grInfo->big_values << 1);
+
+    if ((uint32)bigValuesEnd > (uint32)region2Start)
     {
         h = &(pVars->ht[grInfo->table_select[0]]);
-        if (h->linbits)
-        {
-            pt_huff = pvmp3_huffman_pair_decoding_linbits;
-        }
-        else
-        {
-            pt_huff = pvmp3_huffman_pair_decoding;
-        }
-
-        for (i = 0; i < region1Start; i += 2)
-        {
-            (*pt_huff)(h, &is[i], pMainData);
-        }
+        huffman_decode_pairs(h, is, 0, region1Start, pMainData);
 
         h = &(pVars->ht[grInfo->table_select[1]]);
-        if (h->linbits)
-        {
-            pt_huff = pvmp3_huffman_pair_decoding_linbits;
-        }
-        else
-        {
-            pt_huff = pvmp3_huffman_pair_decoding;
-        }
-
-        for (; i < region2Start; i += 2)
-        {
-            (*pt_huff)(h, &is[i], pMainData);
-        }
+        huffman_decode_pairs(h, is, region1Start, region2Start, pMainData);
 
         h = &(pVars->ht[grInfo->table_select[2]]);
-        if (h->linbits)
-        {
-            pt_huff = pvmp3_huffman_pair_decoding_linbits;
-        }
-        else
-        {
-            pt_huff = pvmp3_huffman_pair_decoding;
-        }
-
-        for (; (uint32)i < (grInfo->big_values << 1); i += 2)
-        {
-            (*pt_huff)(h, &is[i], pMainData);
-        }
+        huffman_decode_pairs(h, is, region2Start, bigValuesEnd, pMainData);
     }
-    else if ((grInfo->big_values << 1) > (uint32)region1Start)
+    else if ((uint32)bigValuesEnd > (uint32)region1Start)
     {
         h = &(pVars->ht[grInfo->table_select[0]]);
-        if (h->linbits)
-        {
-            pt_huff = pvmp3_huffman_pair_decoding_linbits;
-        }
-        else
-        {
-            pt_huff = pvmp3_huffman_pair_decoding;
-        }
-        for (i = 0; i < region1Start; i += 2)
-        {
-            (*pt_huff)(h, &is[i], pMainData);
-        }
+        huffman_decode_pairs(h, is, 0, region1Start, pMainData);
 
         h = &(pVars->ht[grInfo->table_select[1]]);
-        if (h->linbits)
-        {
-            pt_huff = pvmp3_huffman_pair_decoding_linbits;
-        }
-        else
-        {
-            pt_huff = pvmp3_huffman_pair_decoding;
-        }
-        for (; (uint32)i < (grInfo->big_values << 1); i += 2)
-        {
-            (*pt_huff)(h, &is[i], pMainData);
-        }
+        huffman_decode_pairs(h, is, region1Start, bigValuesEnd, pMainData);
     }
     else
     {
         h = &(pVars->ht[grInfo->table_select[0]]);
-        if (h->linbits)
-        {
-            pt_huff = pvmp3_huffman_pair_decoding_linbits;
-        }
-        else
-        {
-            pt_huff = pvmp3_huffman_pair_decoding;
-        }
-
-        for (i = 0; (uint32)i < (grInfo->big_values << 1); i += 2)
-        {
-            (*pt_huff)(h, &is[i], pMainData);
-        }
+        huffman_decode_pairs(h, is, 0, bigValuesEnd, pMainData);
     }
+
+    /* count1 decoding resumes where the big-values pairs stopped. */
+    i = bigValuesEnd;
 
 
 
