@@ -70,6 +70,7 @@ set(DECODER_TESTS
     sideinfo_overread_guard
     leading_garbage_resync
     id3v2_skip
+    trailing_tags
     gapless_trim
     crc_validation
 )

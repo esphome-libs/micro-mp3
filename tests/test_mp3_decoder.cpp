@@ -974,6 +974,129 @@ static bool test_gapless_trim() {
     return true;
 }
 
+static bool test_trailing_tags() {
+    // Trailing metadata tags: ID3v1 (fixed 128-byte "TAG" trailer) and APE
+    // ("APETAGEX" header/footer blocks) sit after the audio. The decoder must
+    // skip them without emitting spurious decode errors, at any chunk size.
+    // The no-Xing fixture keeps gapless trim out of the picture so the
+    // concatenation cases below can assert exact sample counts.
+    DecodeOutput ref = reference_decode("sine_stereo_44100_noxing.mp3");
+    CHECK(!ref.errored);
+    std::vector<uint8_t> file = read_file("sine_stereo_44100_noxing.mp3");
+    CHECK(!file.empty());
+
+    // ID3v1: "TAG" + 125 bytes of fields. Plant sync-looking bytes inside the
+    // comment field to prove the content is skipped wholesale, not scanned.
+    auto make_id3v1 = []() {
+        std::vector<uint8_t> tag = {'T', 'A', 'G'};
+        tag.resize(128, 0x20);
+        tag[100] = 0xFF;  // would be a false frame sync if the tag were scanned
+        tag[101] = 0xFB;
+        return tag;
+    };
+
+    // APEv2 tag: 32-byte header, one item, 32-byte footer. All sizes little-
+    // endian; the declared size covers items + footer but not the header.
+    auto make_ape = [](bool with_header) {
+        auto push32le = [](std::vector<uint8_t>& v, uint32_t x) {
+            v.push_back(static_cast<uint8_t>(x & 0xFF));
+            v.push_back(static_cast<uint8_t>((x >> 8) & 0xFF));
+            v.push_back(static_cast<uint8_t>((x >> 16) & 0xFF));
+            v.push_back(static_cast<uint8_t>((x >> 24) & 0xFF));
+        };
+        const char* key = "REPLAYGAIN_TRACK_GAIN";
+        const char* value = "-6.5 dB";
+        std::vector<uint8_t> item;
+        push32le(item, 7);  // value length
+        push32le(item, 0);  // item flags
+        item.insert(item.end(), key, key + 21);
+        item.push_back(0);
+        item.insert(item.end(), value, value + 7);
+
+        const uint32_t size = static_cast<uint32_t>(item.size()) + 32;  // items + footer
+        auto make_block = [&](bool is_header) {
+            std::vector<uint8_t> b = {'A', 'P', 'E', 'T', 'A', 'G', 'E', 'X'};
+            push32le(b, 2000);  // version
+            push32le(b, size);
+            push32le(b, 1);  // item count
+            uint32_t flags = with_header ? 0x80000000U : 0;
+            if (is_header) {
+                flags |= 0x20000000U;
+            }
+            push32le(b, flags);
+            b.resize(32, 0);  // reserved
+            return b;
+        };
+
+        std::vector<uint8_t> tag;
+        if (with_header) {
+            std::vector<uint8_t> h = make_block(true);
+            tag.insert(tag.end(), h.begin(), h.end());
+        }
+        tag.insert(tag.end(), item.begin(), item.end());
+        std::vector<uint8_t> f = make_block(false);
+        tag.insert(tag.end(), f.begin(), f.end());
+        return tag;
+    };
+
+    struct Case {
+        const char* name;
+        std::vector<uint8_t> tail;
+        bool tiny_chunks;  // also drive at chunk=1
+    };
+    std::vector<uint8_t> id3v1 = make_id3v1();
+    std::vector<uint8_t> ape = make_ape(true);
+    std::vector<uint8_t> ape_headerless = make_ape(false);
+    std::vector<uint8_t> ape_then_id3v1 = ape;  // mp3gain layout: APE, then ID3v1 last
+    ape_then_id3v1.insert(ape_then_id3v1.end(), id3v1.begin(), id3v1.end());
+
+    const Case cases[] = {
+        {"id3v1", id3v1, true},
+        {"ape", ape, true},
+        // Headerless APE: the items precede the only magic (the footer), so
+        // they are consumed as garbage by resync. Whole-buffer feeding only:
+        // at tiny chunk sizes the resync grouping can misalign past the
+        // footer magic and leave a sub-4-byte zero tail buffered at EOF,
+        // which decode_stream (correctly) reports as a truncated stream.
+        {"ape headerless", ape_headerless, false},
+        {"ape + id3v1", ape_then_id3v1, true},
+    };
+
+    for (const Case& c : cases) {
+        std::vector<uint8_t> data = file;
+        data.insert(data.end(), c.tail.begin(), c.tail.end());
+        for (size_t chunk : {static_cast<size_t>(SIZE_MAX), static_cast<size_t>(1)}) {
+            if (chunk == 1 && !c.tiny_chunks) {
+                continue;
+            }
+            Mp3Decoder dec;
+            DecodeOutput out = decode_stream(dec, data.data(), data.size(), chunk);
+            if (out.errored || out.decode_errors != 0 || !outputs_equal(ref, out)) {
+                std::printf("    trailing tag '%s' (chunk=%zu): errored=%d decode_errors=%zu "
+                            "%zu vs %zu samples\n",
+                            c.name, chunk, out.errored ? 1 : 0, out.decode_errors, out.pcm.size(),
+                            ref.pcm.size());
+                return false;
+            }
+        }
+    }
+
+    // Chained tracks where the first kept its ID3v1 trailer: both halves must
+    // decode in full with the 128 tag bytes skipped in between.
+    for (size_t chunk : {static_cast<size_t>(SIZE_MAX), static_cast<size_t>(1)}) {
+        std::vector<uint8_t> data = file;
+        data.insert(data.end(), id3v1.begin(), id3v1.end());
+        data.insert(data.end(), file.begin(), file.end());
+
+        Mp3Decoder dec;
+        DecodeOutput out = decode_stream(dec, data.data(), data.size(), chunk);
+        CHECK(!out.errored);
+        CHECK_EQ(out.decode_errors, 0);
+        CHECK_EQ(out.pcm.size(), 2 * ref.pcm.size());
+    }
+    return true;
+}
+
 // Longest run of consecutive near-silent samples (|x| <= 16) in interleaved
 // PCM. A pure sine fixture never sustains one; a muted frame yields >= 1152.
 static size_t longest_quiet_run(const std::vector<int16_t>& pcm) {
@@ -1060,6 +1183,7 @@ static const TestCase TESTS[] = {
     {"sideinfo_overread_guard", test_sideinfo_overread_guard},
     {"leading_garbage_resync", test_leading_garbage_resync},
     {"id3v2_skip", test_id3v2_skip},
+    {"trailing_tags", test_trailing_tags},
     {"gapless_trim", test_gapless_trim},
     {"crc_validation", test_crc_validation},
 };
