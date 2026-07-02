@@ -261,6 +261,7 @@ void Mp3Decoder::reset() {
 
     this->input_buffer_fill_ = 0;
     this->expected_frame_length_ = 0;
+    this->expected_frame_info_ = Mp3FrameInfo{};
     this->id3_skip_remaining_ = 0;
     this->start_skip_remaining_ = 0;
     this->output_samples_remaining_ = 0;
@@ -396,6 +397,7 @@ Mp3Result Mp3Decoder::run_probe(const uint8_t* input, size_t input_len, size_t& 
     this->bitrate_ = info.bitrate_kbps;
     this->version_ = info.version;
     this->expected_frame_length_ = static_cast<size_t>(info.frame_length);
+    this->expected_frame_info_ = info;
 
     this->probe_done_ = true;
     return MP3_STREAM_INFO_READY;
@@ -876,6 +878,7 @@ Mp3Result Mp3Decoder::decode_direct(tPVMP3DecoderExternal& ext, const uint8_t* i
         std::memcpy(this->input_buffer_, input, input_len);
         this->input_buffer_fill_ = input_len;
         this->expected_frame_length_ = frame_size;
+        this->expected_frame_info_ = info;
         bytes_consumed = input_len;
         return MP3_NEED_MORE_DATA;
     }
@@ -915,12 +918,13 @@ Mp3Result Mp3Decoder::decode_buffered(tPVMP3DecoderExternal& ext, const uint8_t*
 
     // Try to determine frame length if we don't know it yet
     if (this->expected_frame_length_ == 0) {
-        int32_t mp3_len =
-            Mp3Decoder::parse_mp3_frame_header(this->input_buffer_, this->input_buffer_fill_)
-                .frame_length;
+        Mp3FrameInfo info =
+            Mp3Decoder::parse_mp3_frame_header(this->input_buffer_, this->input_buffer_fill_);
+        int32_t mp3_len = info.frame_length;
 
         if (mp3_len > 0) {
             this->expected_frame_length_ = static_cast<size_t>(mp3_len);
+            this->expected_frame_info_ = info;
         } else if (mp3_len == 0) {
             // Still not enough header bytes -- copy a small amount and return
             size_t space_available = MP3_INPUT_BUFFER_SIZE - this->input_buffer_fill_;
@@ -1000,8 +1004,9 @@ Mp3Result Mp3Decoder::decode_buffered(tPVMP3DecoderExternal& ext, const uint8_t*
     // Report a mid-stream format change before decoding (mirrors decode_direct).
     // Keep the buffered frame and expected_frame_length_ intact so the re-call
     // decodes it; bytes_consumed already reflects the input pulled this call.
-    if (this->detect_format_change(
-            Mp3Decoder::parse_mp3_frame_header(this->input_buffer_, this->input_buffer_fill_))) {
+    // expected_frame_info_ was cached when expected_frame_length_ was
+    // established from these same buffered header bytes.
+    if (this->detect_format_change(this->expected_frame_info_)) {
         return MP3_STREAM_INFO_CHANGED;
     }
 

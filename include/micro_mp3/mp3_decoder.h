@@ -495,6 +495,9 @@ private:
     void* decoder_memory_{nullptr};   // Decoder state memory (opaque to OpenCore)
     uint8_t* input_buffer_{nullptr};  // Internal input buffer for accumulating MP3 data
 
+    // Struct fields
+    Mp3FrameInfo expected_frame_info_{};  // Parsed header backing expected_frame_length_
+
     // size_t fields
     size_t expected_frame_length_{0};  // MP3 frame length from parsed header, 0 = unknown
     size_t id3_skip_remaining_{0};  // Remaining bytes to skip for an ID3v2 tag (0 = no active skip)
