@@ -491,6 +491,15 @@ private:
     // Member Variables
     // ========================================
 
+    /// Classification of a short unvalidated fragment held in input_buffer_.
+    /// Recorded when the fragment is buffered, so tag detection never has to
+    /// infer intent from buffer content alone (a mid-stream frame fragment
+    /// whose bytes happen to spell a tag magic must not be treated as a tag).
+    enum class PendingTag : uint8_t {
+        NONE,   ///< Frame data or garbage; the decode paths resync as needed
+        ID3V2,  ///< Bytes so far match a prefix of an ID3v2 "ID3" header
+    };
+
     // Pointer fields
     void* decoder_memory_{nullptr};   // Decoder state memory (opaque to OpenCore)
     uint8_t* input_buffer_{nullptr};  // Internal input buffer for accumulating MP3 data
@@ -513,7 +522,8 @@ private:
     bool end_trim_active_{false};          // True when the Xing frame count armed end trimming
     Mp3Equalizer equalizer_{MP3_EQ_FLAT};  // Equalizer preset (applied per-frame during decode)
     bool initialized_{false};              // True after decoder memory is allocated and set up
-    uint8_t output_channels_{0};      // Decoded channel count (1 = mono, 2 = stereo), 0 = unknown
+    uint8_t output_channels_{0};  // Decoded channel count (1 = mono, 2 = stereo), 0 = unknown
+    PendingTag pending_tag_{PendingTag::NONE};  // What the buffered fragment was classified as
     bool probe_done_{false};          // True after first frame header parsed (probe complete)
     bool vbr_header_checked_{false};  // Set once the first frame was checked for a Xing/Info header
     Mp3Version version_{MP3_MPEG1};

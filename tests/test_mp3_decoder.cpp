@@ -884,6 +884,58 @@ static bool test_id3v2_skip() {
             return false;
         }
     }
+
+    // Mid-stream tags: chained streams carry each track's leading tag at the
+    // join point. Use the no-Xing fixture so no gapless end trim is armed
+    // (spent trim state would clamp the second stream's samples to zero).
+    // Every frame of both halves must come out: the concatenated decode emits
+    // exactly twice the single-file sample count, at every chunk size.
+    DecodeOutput plain_ref = reference_decode("sine_stereo_44100_noxing.mp3");
+    CHECK(!plain_ref.errored);
+    std::vector<uint8_t> plain = read_file("sine_stereo_44100_noxing.mp3");
+    CHECK(!plain.empty());
+
+    for (size_t chunk : {static_cast<size_t>(SIZE_MAX), static_cast<size_t>(509),
+                         static_cast<size_t>(1)}) {
+        std::vector<uint8_t> tag = make_id3(200, false);
+        std::vector<uint8_t> data = plain;
+        data.insert(data.end(), tag.begin(), tag.end());
+        data.insert(data.end(), plain.begin(), plain.end());
+
+        Mp3Decoder dec;
+        DecodeOutput out = decode_stream(dec, data.data(), data.size(), chunk);
+        CHECK(!out.errored);
+        CHECK_EQ(out.pcm.size(), 2 * plain_ref.pcm.size());
+    }
+
+    // A mid-stream "ID3" match claiming an outsized tag must not swallow the
+    // audio that follows. Insert a syntactically valid 10-byte ID3v2 header
+    // claiming ~200 MB between the two halves: the size cap rejects it, the
+    // resync path chews through the 10 bytes, and the second half still
+    // decodes in full. chunk=1 additionally drives the header through the
+    // fragment-classification path a byte at a time.
+    for (size_t chunk : {static_cast<size_t>(SIZE_MAX), static_cast<size_t>(1)}) {
+        std::vector<uint8_t> fake;
+        fake.push_back('I');
+        fake.push_back('D');
+        fake.push_back('3');
+        fake.push_back(0x04);  // major version
+        fake.push_back(0x00);  // revision
+        fake.push_back(0x00);  // flags
+        fake.push_back(0x60);  // syncsafe size ~201 MB
+        fake.push_back(0x00);
+        fake.push_back(0x00);
+        fake.push_back(0x00);
+
+        std::vector<uint8_t> data = plain;
+        data.insert(data.end(), fake.begin(), fake.end());
+        data.insert(data.end(), plain.begin(), plain.end());
+
+        Mp3Decoder dec;
+        DecodeOutput out = decode_stream(dec, data.data(), data.size(), chunk);
+        CHECK(!out.errored);
+        CHECK_EQ(out.pcm.size(), 2 * plain_ref.pcm.size());
+    }
     return true;
 }
 
