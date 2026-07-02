@@ -413,12 +413,20 @@ Mp3Result Mp3Decoder::run_probe(const uint8_t* input, size_t input_len, size_t& 
     // Valid header -- extract stream properties. Do NOT pull frame body
     // bytes; the caller keeps them (fast path) or the internal buffer
     // holds just the 4 header bytes (slow path).
+    //
+    // Deliberately do NOT set expected_frame_length_ here: the probe
+    // consumes no frame bytes, so the value would outlive its frame. On the
+    // fast path decode_direct() re-parses the caller's input anyway, and on
+    // the slow path decode_buffered() re-derives it from the buffered header
+    // bytes. A leftover value is actively dangerous: decode_direct() never
+    // clears it while zero-copy decoding, so a later sub-4-byte garbage
+    // fragment would pair with this frame's stale length and format in
+    // decode_buffered(), pulling the wrong byte count and missing a format
+    // change (found by the fuzzer's output-buffer oracle).
     this->sample_rate_ = info.sample_rate;
     this->output_channels_ = info.channels;
     this->bitrate_ = info.bitrate_kbps;
     this->version_ = info.version;
-    this->expected_frame_length_ = static_cast<size_t>(info.frame_length);
-    this->expected_frame_info_ = info;
 
     this->probe_done_ = true;
     return MP3_STREAM_INFO_READY;
