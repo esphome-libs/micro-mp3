@@ -111,6 +111,20 @@ unchanged.
 
 ### `pvmp3_dequantize_sample.cpp`
 
+The positive-gain scaling shift saturates instead of wrapping. `global_gain`
+is an 8-bit side-info field with no reserved values, so a raw value near 255
+with zero scalefactors is a legal encoding and yields a final left shift of up
+to 23, while the scaled sample already carries up to ~2^30 significant bits;
+upstream's unguarded `<< global_gain` (three sites: the short/mixed-block path
+and both long-block band loops) then overflows for essentially any nonzero
+sample, which is signed-overflow UB and feeds wrapped values into the IMDCT (a
+loud glitch instead of clipped-loud audio). The negative-gain right-shift
+branch was already guarded; the left-shift branches now clamp to the int32
+range via `sat_shift_left()`. Never triggered by sane encoder output, so
+conformance results are unchanged. Not caught by fuzzing because UBSan's
+`shift-base` check, disabled for the ~100 intentional negative-value shifts in
+the DSP, is also the check that reports left-shift magnitude overflow.
+
 Two fixes in the short-block dequantization path:
 
 1. `temp2` (the sub-window index, 0..2) is clamped to `[0, 2]` before indexing
