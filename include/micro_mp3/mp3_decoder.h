@@ -441,7 +441,7 @@ private:
     /// fragment always starts with 0xFF and classifies as NONE.
     ///
     /// @param data Fragment bytes
-    /// @param len Number of bytes at data (>= 1)
+    /// @param len Number of bytes at data (may be 0)
     /// @return The PendingTag classification for the fragment
     PendingTag classify_fragment(const uint8_t* data, size_t len) const;
 
