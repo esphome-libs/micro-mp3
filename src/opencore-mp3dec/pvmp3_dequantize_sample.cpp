@@ -151,6 +151,31 @@ const int32 two_cubic_roots[7] =
 ----------------------------------------------------------------------------*/
 
 
+/*
+ * microMP3 FIX: saturating (x << shift) for the positive-gain scaling
+ * branches. global_gain is decoded from an 8-bit side-info field with no
+ * reserved values; its raw range maps to a final shift of up to 23 here
+ * (raw 255 with zero scalefactors), while the scaled sample can hold up to
+ * ~2^30 significant bits, so the plain shift wraps for essentially any
+ * nonzero sample once the shift is large. Upstream guarded only the
+ * negative-gain (right-shift) branch. Saturate instead of wrapping; the
+ * shift never reaches 31, so the limit computation is well defined.
+ */
+static inline int32 sat_shift_left(int32 x, int32 shift)
+{
+    int32 pos_limit = 0x7FFFFFFF >> shift;
+    if (x > pos_limit)
+    {
+        return 0x7FFFFFFF;
+    }
+    if (x < -pos_limit - 1)
+    {
+        return -0x7FFFFFFF - 1;
+    }
+    return (x << shift);
+}
+
+
 int32 power_1_third(int32 xx)
 {
 
@@ -330,7 +355,7 @@ void pvmp3_dequantize_sample(int32 is[SUBBANDS_NUMBER*FILTERBANK_BANDS],
             }
             else
             {
-                is[ss] = (tmp << global_gain);
+                is[ss] = sat_shift_left(tmp, global_gain);
             }
 
         }  /*   for (ss=0 ; ss < used_freq_lines ; ss++)   */
@@ -397,14 +422,14 @@ void pvmp3_dequantize_sample(int32 is[SUBBANDS_NUMBER*FILTERBANK_BANDS],
                         if (tmp)
                         {
                             tmp = fxp_mul32_Q30((tmp << 16), power_1_third(pv_abs(tmp)));
-                            is[ss] = fxp_mul32_Q30(tmp, two_raise_one_fourth) << global_gain;
+                            is[ss] = sat_shift_left(fxp_mul32_Q30(tmp, two_raise_one_fourth), global_gain);
                         }
 
                         tmp =  is[ss+1];
                         if (tmp)
                         {
                             tmp = fxp_mul32_Q30((tmp << 16), power_1_third(pv_abs(tmp)));
-                            is[ss+1] = fxp_mul32_Q30(tmp, two_raise_one_fourth) << global_gain;
+                            is[ss+1] = sat_shift_left(fxp_mul32_Q30(tmp, two_raise_one_fourth), global_gain);
                         }
                     }
                 }
@@ -449,7 +474,7 @@ void pvmp3_dequantize_sample(int32 is[SUBBANDS_NUMBER*FILTERBANK_BANDS],
                         if (tmp)
                         {
                             tmp = fxp_mul32_Q30((tmp << 16), power_1_third(pv_abs(tmp)));
-                            is[ss] = fxp_mul32_Q30(tmp, two_raise_one_fourth) << global_gain;
+                            is[ss] = sat_shift_left(fxp_mul32_Q30(tmp, two_raise_one_fourth), global_gain);
                         }
                     }
                 }
