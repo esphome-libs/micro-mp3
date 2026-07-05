@@ -963,13 +963,16 @@ static bool test_crc_validation() {
     for (int frame = 0; frame < 20; frame++) {
         CHECK(off + 4 <= corrupt.size());
         CHECK_EQ(corrupt[off], 0xFF);
-        static const uint32_t BITRATES[] = {0,  32,  40,  48,  56,  64,  80, 96,
-                                            112, 128, 160, 192, 224, 256, 320};
+        // Index 0 is free-format and index 15 is reserved; both map to 0 so the
+        // CHECK below rejects them instead of reading past the table.
+        static const uint32_t BITRATES[] = {0,   32,  40,  48,  56,  64,  80, 96,
+                                            112, 128, 160, 192, 224, 256, 320, 0};
         const uint32_t bitrate = BITRATES[corrupt[off + 2] >> 4];
         const uint32_t padding = (corrupt[off + 2] >> 1) & 1;
         CHECK(bitrate > 0);
         off += (144 * bitrate * 1000) / 44100 + padding;
     }
+    CHECK(off + 8 < corrupt.size());
     corrupt[off + 8] ^= 0x55;
 
     // The bad frame fails its CRC and is muted, not decoded: no error is
