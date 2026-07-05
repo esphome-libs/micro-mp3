@@ -119,6 +119,8 @@ struct Mp3FrameInfo {
  * - Internal input buffering for frame accumulation
  * - MPEG1, MPEG2, and MPEG2.5 Layer III
  * - Gapless trimming (Xing/Info/LAME encoder delay and end padding)
+ * - Metadata tag skipping: ID3v2 (leading or between chained tracks),
+ *   plus trailing ID3v1 "TAG" and APE "APETAGEX" tags
  *
  * @warning Thread Safety: This class is NOT thread-safe. Each decoder instance
  *          must be accessed from only one thread at a time.
@@ -370,6 +372,17 @@ public:
     void reset();
 
 private:
+    /// Classification of a short unvalidated fragment held in input_buffer_.
+    /// Recorded when the fragment is buffered, so tag detection never has to
+    /// infer intent from buffer content alone (a mid-stream frame fragment
+    /// whose bytes happen to spell a tag magic must not be treated as a tag).
+    enum class PendingTag : uint8_t {
+        NONE,   ///< Frame data or garbage; the decode paths resync as needed
+        ID3V2,  ///< Bytes so far match a prefix of an ID3v2 "ID3" header
+        ID3V1,  ///< Bytes so far match a prefix of an ID3v1 "TAG" trailer
+        APE,    ///< Bytes so far match a prefix of an "APETAGEX" APE tag
+    };
+
     // ========================================
     // Internal Helpers
     // ========================================
@@ -419,6 +432,18 @@ private:
     /// @return Total tag size in bytes (header + body + optional footer),
     ///         or 0 if not a valid ID3v2 header (requires at least 10 bytes)
     static size_t parse_id3v2_tag_size(const uint8_t* data, size_t len);
+
+    /// @brief Classify a short unvalidated fragment being buffered
+    ///
+    /// Determines whether the bytes could begin a metadata tag (a prefix of
+    /// "ID3", or, once the stream is probed, of "TAG" or "APETAGEX") so the
+    /// tag-continuation logic in decode() may finish parsing it. A real frame
+    /// fragment always starts with 0xFF and classifies as NONE.
+    ///
+    /// @param data Fragment bytes
+    /// @param len Number of bytes at data (may be 0)
+    /// @return The PendingTag classification for the fragment
+    PendingTag classify_fragment(const uint8_t* data, size_t len) const;
 
     /// @brief Detect a Xing/Info VBR header frame and extract gapless metadata
     ///
@@ -495,10 +520,13 @@ private:
     void* decoder_memory_{nullptr};   // Decoder state memory (opaque to OpenCore)
     uint8_t* input_buffer_{nullptr};  // Internal input buffer for accumulating MP3 data
 
+    // Struct fields
+    Mp3FrameInfo expected_frame_info_{};  // Parsed header backing expected_frame_length_
+
     // size_t fields
     size_t expected_frame_length_{0};  // MP3 frame length from parsed header, 0 = unknown
-    size_t id3_skip_remaining_{0};  // Remaining bytes to skip for an ID3v2 tag (0 = no active skip)
-    size_t input_buffer_fill_{0};   // Number of valid bytes in the internal input buffer
+    size_t tag_skip_remaining_{0};     // Remaining bytes of a detected metadata tag (0 = no skip)
+    size_t input_buffer_fill_{0};      // Number of valid bytes in the internal input buffer
     size_t output_samples_remaining_{0};  // Per-channel output samples still allowed (gapless end)
     size_t start_skip_remaining_{0};      // Leading PCM samples to drop at start (gapless)
 
@@ -510,7 +538,8 @@ private:
     bool end_trim_active_{false};          // True when the Xing frame count armed end trimming
     Mp3Equalizer equalizer_{MP3_EQ_FLAT};  // Equalizer preset (applied per-frame during decode)
     bool initialized_{false};              // True after decoder memory is allocated and set up
-    uint8_t output_channels_{0};      // Decoded channel count (1 = mono, 2 = stereo), 0 = unknown
+    uint8_t output_channels_{0};  // Decoded channel count (1 = mono, 2 = stereo), 0 = unknown
+    PendingTag pending_tag_{PendingTag::NONE};  // What the buffered fragment was classified as
     bool probe_done_{false};          // True after first frame header parsed (probe complete)
     bool vbr_header_checked_{false};  // Set once the first frame was checked for a Xing/Info header
     Mp3Version version_{MP3_MPEG1};

@@ -78,6 +78,77 @@ constexpr bool is_sync_pair(uint8_t byte0, uint8_t byte1) {
     return byte0 == MP3_SYNC_BYTE0 && (byte1 & MP3_SYNC_BYTE1_MASK) == MP3_SYNC_BYTE1_MASK;
 }
 
+// Largest tag accepted mid-stream (after the first frame was probed).
+// Leading ID3v2 tags keep the full 256 MB the syncsafe size field can
+// express, but a mid-stream magic match can also be desynced garbage whose
+// fabricated size would silently swallow real audio, so bound the damage.
+// Genuine mid-stream tags come from stream stitching and are small; even
+// album art fits easily.
+constexpr size_t MP3_MAX_MIDSTREAM_TAG_SIZE = static_cast<size_t>(16) * 1024 * 1024;
+
+// ID3v1: fixed 128-byte trailer starting with "TAG".
+constexpr size_t MP3_ID3V1_TAG_SIZE = 128;
+constexpr size_t MP3_ID3V1_MAGIC_SIZE = 3;
+
+// APEv1/v2: 32-byte header/footer starting with "APETAGEX".
+constexpr size_t MP3_APE_BLOCK_SIZE = 32;
+constexpr size_t MP3_APE_MAGIC_SIZE = 8;
+constexpr uint8_t MP3_APE_MAGIC[MP3_APE_MAGIC_SIZE] = {'A', 'P', 'E', 'T', 'A', 'G', 'E', 'X'};
+
+// True if the first len bytes could begin an ID3v2 tag ("ID3" prefix).
+constexpr bool is_id3v2_prefix(const uint8_t* data, size_t len) {
+    // NOLINTNEXTLINE(readability-magic-numbers)
+    return len >= 1 && data[0] == 0x49 && (len < 2 || data[1] == 0x44) &&
+           (len < 3 || data[2] == 0x33);  // NOLINT(readability-magic-numbers)
+}
+
+// True if the first len bytes could begin an ID3v1 trailer ("TAG" prefix).
+constexpr bool is_id3v1_prefix(const uint8_t* data, size_t len) {
+    return len >= 1 && data[0] == 'T' && (len < 2 || data[1] == 'A') && (len < 3 || data[2] == 'G');
+}
+
+// True if the first len bytes could begin an APE tag ("APETAGEX" prefix).
+constexpr bool is_ape_prefix(const uint8_t* data, size_t len) {
+    for (size_t i = 0; i < len && i < MP3_APE_MAGIC_SIZE; i++) {
+        if (data[i] != MP3_APE_MAGIC[i]) {
+            return false;
+        }
+    }
+    return len >= 1;
+}
+
+// Parse a 32-byte APE header/footer block and return the total bytes to skip
+// starting at the magic, or 0 if the block is not a plausible APE tag. The
+// declared tag size covers the items and footer but not the header, so a
+// header block (flags bit 29) skips 32 + size; a footer block encountered
+// while reading forward means the items already went by (headerless APEv1),
+// so only the 32 footer bytes remain to skip.
+size_t parse_ape_tag_size(const uint8_t* data, size_t len) {
+    if (len < MP3_APE_BLOCK_SIZE || !is_ape_prefix(data, MP3_APE_MAGIC_SIZE)) {
+        return 0;
+    }
+    // All multi-byte fields are little-endian.
+    // NOLINTBEGIN(readability-magic-numbers)
+    uint32_t version = static_cast<uint32_t>(data[8]) | (static_cast<uint32_t>(data[9]) << 8) |
+                       (static_cast<uint32_t>(data[10]) << 16) |
+                       (static_cast<uint32_t>(data[11]) << 24);
+    uint32_t size = static_cast<uint32_t>(data[12]) | (static_cast<uint32_t>(data[13]) << 8) |
+                    (static_cast<uint32_t>(data[14]) << 16) |
+                    (static_cast<uint32_t>(data[15]) << 24);
+    uint32_t flags = static_cast<uint32_t>(data[20]) | (static_cast<uint32_t>(data[21]) << 8) |
+                     (static_cast<uint32_t>(data[22]) << 16) |
+                     (static_cast<uint32_t>(data[23]) << 24);
+    if (version != 1000 && version != 2000) {
+        return 0;
+    }
+    if (size < MP3_APE_BLOCK_SIZE || size > MP3_MAX_MIDSTREAM_TAG_SIZE) {
+        return 0;
+    }
+    const bool is_header = (flags & 0x20000000U) != 0;
+    // NOLINTEND(readability-magic-numbers)
+    return is_header ? MP3_APE_BLOCK_SIZE + size : MP3_APE_BLOCK_SIZE;
+}
+
 }  // namespace
 
 // ============================================================================
@@ -113,19 +184,26 @@ Mp3Result Mp3Decoder::decode(const uint8_t* input, size_t input_len, uint8_t* ou
         }
     }
 
-    // ID3v2 tag skipping: skip non-audio metadata before it reaches the decoder
+    // Metadata tag skipping: skip non-audio bytes before they reach the
+    // decoder. Handles ID3v2 tags (leading, or mid-stream for chained files)
+    // plus, once the stream format is probed, trailing ID3v1 "TAG" and APE
+    // "APETAGEX" tags, which sit at the end of a file or between chained
+    // tracks.
 
-    // Continue an in-progress ID3v2 tag skip
-    if (this->id3_skip_remaining_ > 0) {
-        size_t skip = std::min(input_len, this->id3_skip_remaining_);
+    // Continue an in-progress tag skip
+    if (this->tag_skip_remaining_ > 0) {
+        size_t skip = std::min(input_len, this->tag_skip_remaining_);
         bytes_consumed = skip;
-        this->id3_skip_remaining_ -= skip;
+        this->tag_skip_remaining_ -= skip;
         return MP3_NEED_MORE_DATA;
     }
 
-    // Detect a new ID3v2 tag at the current input position (direct path only).
-    // When partial data is already buffered, the normal decode paths handle it.
-    if (this->input_buffer_fill_ == 0) {
+    // Detect a new tag at the current input position (direct path only).
+    // When partial data is already buffered, only a fragment that was
+    // classified as a possible tag when it was buffered (pending_tag_) may
+    // enter a continuation path; buffer content alone is not trusted, since
+    // desynced garbage can spell a tag magic by coincidence.
+    if (this->input_buffer_fill_ == 0 && input_len > 0) {
         // Quick check for "ID3" signature before committing to full parse
         // NOLINTNEXTLINE(readability-magic-numbers)
         if (input_len >= 3 && input[0] == 0x49 && input[1] == 0x44 && input[2] == 0x33) {
@@ -134,26 +212,56 @@ Mp3Result Mp3Decoder::decode(const uint8_t* input, size_t input_len, uint8_t* ou
                 // Not enough bytes to parse the full ID3v2 header -- buffer and wait
                 std::memcpy(this->input_buffer_, input, input_len);
                 this->input_buffer_fill_ = input_len;
+                this->pending_tag_ = PendingTag::ID3V2;
                 bytes_consumed = input_len;
                 return MP3_NEED_MORE_DATA;
             }
             size_t tag_size = Mp3Decoder::parse_id3v2_tag_size(input, input_len);
-            if (tag_size > 0) {
+            if (tag_size > 0 && (!this->probe_done_ || tag_size <= MP3_MAX_MIDSTREAM_TAG_SIZE)) {
                 size_t skip = std::min(input_len, tag_size);
                 bytes_consumed = skip;
-                this->id3_skip_remaining_ = tag_size - skip;
+                this->tag_skip_remaining_ = tag_size - skip;
                 return MP3_NEED_MORE_DATA;
             }
+        } else if (this->probe_done_ && is_id3v1_prefix(input, input_len)) {
+            if (input_len < MP3_ID3V1_MAGIC_SIZE) {
+                // Fragment of a possible "TAG" trailer -- buffer and wait
+                std::memcpy(this->input_buffer_, input, input_len);
+                this->input_buffer_fill_ = input_len;
+                this->pending_tag_ = PendingTag::ID3V1;
+                bytes_consumed = input_len;
+                return MP3_NEED_MORE_DATA;
+            }
+            // Full "TAG" magic at a frame boundary: fixed 128-byte trailer.
+            // A frame can never start with 'T', so at worst a desynced
+            // stream loses 128 garbage bytes here before resyncing.
+            size_t skip = std::min(input_len, MP3_ID3V1_TAG_SIZE);
+            bytes_consumed = skip;
+            this->tag_skip_remaining_ = MP3_ID3V1_TAG_SIZE - skip;
+            return MP3_NEED_MORE_DATA;
+        } else if (this->probe_done_ && is_ape_prefix(input, input_len)) {
+            if (input_len < MP3_APE_BLOCK_SIZE) {
+                // Fragment of a possible APE header/footer -- buffer until
+                // the full 32-byte block is available to validate.
+                std::memcpy(this->input_buffer_, input, input_len);
+                this->input_buffer_fill_ = input_len;
+                this->pending_tag_ = PendingTag::APE;
+                bytes_consumed = input_len;
+                return MP3_NEED_MORE_DATA;
+            }
+            size_t tag_total = parse_ape_tag_size(input, input_len);
+            if (tag_total > 0) {
+                size_t skip = std::min(input_len, tag_total);
+                bytes_consumed = skip;
+                this->tag_skip_remaining_ = tag_total - skip;
+                return MP3_NEED_MORE_DATA;
+            }
+            // Full magic but implausible fields: fall through to resync
         }
-        // NOLINTNEXTLINE(readability-magic-numbers)
-    } else if (this->input_buffer_fill_ < 10 &&
-               this->input_buffer_[0] == 0x49 &&  // NOLINT(readability-magic-numbers)
-               (this->input_buffer_fill_ < 2 ||
-                this->input_buffer_[1] == 0x44) &&  // NOLINT(readability-magic-numbers)
-               (this->input_buffer_fill_ < 3 ||
-                this->input_buffer_[2] == 0x33)) {  // NOLINT(readability-magic-numbers)
+    } else if (this->pending_tag_ == PendingTag::ID3V2) {
         // Partial ID3v2 header was buffered from a previous call -- accumulate
-        // enough bytes to parse the 10-byte header.
+        // enough bytes to parse the 10-byte header. Buffering sites cap the
+        // fragment below 10 bytes, so `need` is always positive.
         // NOLINTNEXTLINE(readability-magic-numbers)
         size_t need = 10 - this->input_buffer_fill_;
         size_t to_copy = std::min(need, input_len);
@@ -167,9 +275,10 @@ Mp3Result Mp3Decoder::decode(const uint8_t* input, size_t input_len, uint8_t* ou
             return MP3_NEED_MORE_DATA;
         }
 
+        this->pending_tag_ = PendingTag::NONE;
         size_t tag_size =
             Mp3Decoder::parse_id3v2_tag_size(this->input_buffer_, this->input_buffer_fill_);
-        if (tag_size > 0) {
+        if (tag_size > 0 && (!this->probe_done_ || tag_size <= MP3_MAX_MIDSTREAM_TAG_SIZE)) {
             // The 10-byte header spans previous + current input.
             // Remaining tag bytes = total - header bytes already consumed.
             // NOLINTNEXTLINE(readability-magic-numbers)
@@ -180,11 +289,66 @@ Mp3Result Mp3Decoder::decode(const uint8_t* input, size_t input_len, uint8_t* ou
             size_t remaining_input = input_len - to_copy;
             size_t extra_skip = std::min(remaining_input, remaining_tag);
             bytes_consumed = to_copy + extra_skip;
-            this->id3_skip_remaining_ = remaining_tag - extra_skip;
+            this->tag_skip_remaining_ = remaining_tag - extra_skip;
             return MP3_NEED_MORE_DATA;
         }
-        // Not a valid ID3v2 tag -- the to_copy bytes are already in the internal
-        // buffer; consume them and let the next call handle via decode_buffered()
+        // Not a valid (or not an acceptable) ID3v2 tag -- the to_copy bytes
+        // are already in the internal buffer; consume them and let the next
+        // call resync via decode_buffered()
+        bytes_consumed = to_copy;
+        return MP3_NEED_MORE_DATA;
+    } else if (this->pending_tag_ == PendingTag::ID3V1) {
+        // Partial "TAG" magic was buffered -- accumulate the 3 magic bytes.
+        size_t need = MP3_ID3V1_MAGIC_SIZE - this->input_buffer_fill_;
+        size_t to_copy = std::min(need, input_len);
+        std::memcpy(this->input_buffer_ + this->input_buffer_fill_, input, to_copy);
+        this->input_buffer_fill_ += to_copy;
+
+        if (this->input_buffer_fill_ < MP3_ID3V1_MAGIC_SIZE) {
+            bytes_consumed = to_copy;
+            return MP3_NEED_MORE_DATA;
+        }
+
+        this->pending_tag_ = PendingTag::NONE;
+        if (this->input_buffer_[0] == 'T' && this->input_buffer_[1] == 'A' &&
+            this->input_buffer_[2] == 'G') {
+            size_t remaining_tag = MP3_ID3V1_TAG_SIZE - MP3_ID3V1_MAGIC_SIZE;
+            this->input_buffer_fill_ = 0;
+
+            size_t remaining_input = input_len - to_copy;
+            size_t extra_skip = std::min(remaining_input, remaining_tag);
+            bytes_consumed = to_copy + extra_skip;
+            this->tag_skip_remaining_ = remaining_tag - extra_skip;
+            return MP3_NEED_MORE_DATA;
+        }
+        // Not a "TAG" trailer -- leave the bytes for the resync path
+        bytes_consumed = to_copy;
+        return MP3_NEED_MORE_DATA;
+    } else if (this->pending_tag_ == PendingTag::APE) {
+        // Partial APE magic was buffered -- accumulate the full 32-byte block.
+        size_t need = MP3_APE_BLOCK_SIZE - this->input_buffer_fill_;
+        size_t to_copy = std::min(need, input_len);
+        std::memcpy(this->input_buffer_ + this->input_buffer_fill_, input, to_copy);
+        this->input_buffer_fill_ += to_copy;
+
+        if (this->input_buffer_fill_ < MP3_APE_BLOCK_SIZE) {
+            bytes_consumed = to_copy;
+            return MP3_NEED_MORE_DATA;
+        }
+
+        this->pending_tag_ = PendingTag::NONE;
+        size_t tag_total = parse_ape_tag_size(this->input_buffer_, this->input_buffer_fill_);
+        if (tag_total > 0) {
+            size_t remaining_tag = tag_total - MP3_APE_BLOCK_SIZE;
+            this->input_buffer_fill_ = 0;
+
+            size_t remaining_input = input_len - to_copy;
+            size_t extra_skip = std::min(remaining_input, remaining_tag);
+            bytes_consumed = to_copy + extra_skip;
+            this->tag_skip_remaining_ = remaining_tag - extra_skip;
+            return MP3_NEED_MORE_DATA;
+        }
+        // Not a plausible APE block -- leave the bytes for the resync path
         bytes_consumed = to_copy;
         return MP3_NEED_MORE_DATA;
     }
@@ -261,7 +425,9 @@ void Mp3Decoder::reset() {
 
     this->input_buffer_fill_ = 0;
     this->expected_frame_length_ = 0;
-    this->id3_skip_remaining_ = 0;
+    this->expected_frame_info_ = Mp3FrameInfo{};
+    this->pending_tag_ = PendingTag::NONE;
+    this->tag_skip_remaining_ = 0;
     this->start_skip_remaining_ = 0;
     this->output_samples_remaining_ = 0;
     this->sample_rate_ = 0;
@@ -308,7 +474,8 @@ Mp3Result Mp3Decoder::initialize() {
     pvmp3_InitDecoder(&ext, this->decoder_memory_);
 
     this->input_buffer_fill_ = 0;
-    this->id3_skip_remaining_ = 0;
+    this->pending_tag_ = PendingTag::NONE;
+    this->tag_skip_remaining_ = 0;
     this->start_skip_remaining_ = 0;
     this->output_samples_remaining_ = 0;
     this->initialized_ = true;
@@ -361,9 +528,12 @@ Mp3Result Mp3Decoder::run_probe(const uint8_t* input, size_t input_len, size_t& 
     } else {
         // Fast path: parse directly from caller's input if we have 4 bytes;
         // otherwise stash what we got and fall into the slow path next call.
+        // Classify the fragment (see decode_direct) so a leading tag arriving
+        // in 1-2 byte pieces still reaches the tag-continuation path.
         if (input_len < 4) {
             std::memcpy(this->input_buffer_, input, input_len);
             this->input_buffer_fill_ = input_len;
+            this->pending_tag_ = this->classify_fragment(input, input_len);
             bytes_consumed = input_len;
             return MP3_NEED_MORE_DATA;
         }
@@ -391,11 +561,20 @@ Mp3Result Mp3Decoder::run_probe(const uint8_t* input, size_t input_len, size_t& 
     // Valid header -- extract stream properties. Do NOT pull frame body
     // bytes; the caller keeps them (fast path) or the internal buffer
     // holds just the 4 header bytes (slow path).
+    //
+    // Deliberately do NOT set expected_frame_length_ here: the probe
+    // consumes no frame bytes, so the value would outlive its frame. On the
+    // fast path decode_direct() re-parses the caller's input anyway, and on
+    // the slow path decode_buffered() re-derives it from the buffered header
+    // bytes. A leftover value is actively dangerous: decode_direct() never
+    // clears it while zero-copy decoding, so a later sub-4-byte garbage
+    // fragment would pair with this frame's stale length and format in
+    // decode_buffered(), pulling the wrong byte count and missing a format
+    // change (found by the fuzzer's output-buffer oracle).
     this->sample_rate_ = info.sample_rate;
     this->output_channels_ = info.channels;
     this->bitrate_ = info.bitrate_kbps;
     this->version_ = info.version;
-    this->expected_frame_length_ = static_cast<size_t>(info.frame_length);
 
     this->probe_done_ = true;
     return MP3_STREAM_INFO_READY;
@@ -533,6 +712,23 @@ Mp3FrameInfo Mp3Decoder::parse_mp3_frame_header(const uint8_t* data, size_t len)
 
     info.frame_length = frame_length;
     return info;
+}
+
+Mp3Decoder::PendingTag Mp3Decoder::classify_fragment(const uint8_t* data, size_t len) const {
+    if (is_id3v2_prefix(data, len)) {
+        return PendingTag::ID3V2;
+    }
+    // Trailing-tag magics are only meaningful once the stream is known;
+    // before the probe, leading garbage goes through the resync path.
+    if (this->probe_done_) {
+        if (is_id3v1_prefix(data, len)) {
+            return PendingTag::ID3V1;
+        }
+        if (is_ape_prefix(data, len)) {
+            return PendingTag::APE;
+        }
+    }
+    return PendingTag::NONE;
 }
 
 size_t Mp3Decoder::parse_id3v2_tag_size(const uint8_t* data, size_t len) {
@@ -801,9 +997,13 @@ Mp3Result Mp3Decoder::decode_direct(tPVMP3DecoderExternal& ext, const uint8_t* i
 
     if (mp3_len == 0) {
         // Fewer than 4 bytes available -- can't parse header yet.
-        // Buffer what we have and wait for more data.
+        // Buffer what we have and wait for more data. Classify the fragment
+        // now: only a prefix of a tag magic may later enter a
+        // tag-continuation path (a real frame fragment always starts with
+        // 0xFF; anything else is garbage the resync path handles).
         std::memcpy(this->input_buffer_, input, input_len);
         this->input_buffer_fill_ = input_len;
+        this->pending_tag_ = this->classify_fragment(input, input_len);
         bytes_consumed = input_len;
         return MP3_NEED_MORE_DATA;
     }
@@ -876,6 +1076,7 @@ Mp3Result Mp3Decoder::decode_direct(tPVMP3DecoderExternal& ext, const uint8_t* i
         std::memcpy(this->input_buffer_, input, input_len);
         this->input_buffer_fill_ = input_len;
         this->expected_frame_length_ = frame_size;
+        this->expected_frame_info_ = info;
         bytes_consumed = input_len;
         return MP3_NEED_MORE_DATA;
     }
@@ -915,12 +1116,13 @@ Mp3Result Mp3Decoder::decode_buffered(tPVMP3DecoderExternal& ext, const uint8_t*
 
     // Try to determine frame length if we don't know it yet
     if (this->expected_frame_length_ == 0) {
-        int32_t mp3_len =
-            Mp3Decoder::parse_mp3_frame_header(this->input_buffer_, this->input_buffer_fill_)
-                .frame_length;
+        Mp3FrameInfo info =
+            Mp3Decoder::parse_mp3_frame_header(this->input_buffer_, this->input_buffer_fill_);
+        int32_t mp3_len = info.frame_length;
 
         if (mp3_len > 0) {
             this->expected_frame_length_ = static_cast<size_t>(mp3_len);
+            this->expected_frame_info_ = info;
         } else if (mp3_len == 0) {
             // Still not enough header bytes -- copy a small amount and return
             size_t space_available = MP3_INPUT_BUFFER_SIZE - this->input_buffer_fill_;
@@ -1000,8 +1202,9 @@ Mp3Result Mp3Decoder::decode_buffered(tPVMP3DecoderExternal& ext, const uint8_t*
     // Report a mid-stream format change before decoding (mirrors decode_direct).
     // Keep the buffered frame and expected_frame_length_ intact so the re-call
     // decodes it; bytes_consumed already reflects the input pulled this call.
-    if (this->detect_format_change(
-            Mp3Decoder::parse_mp3_frame_header(this->input_buffer_, this->input_buffer_fill_))) {
+    // expected_frame_info_ was cached when expected_frame_length_ was
+    // established from these same buffered header bytes.
+    if (this->detect_format_change(this->expected_frame_info_)) {
         return MP3_STREAM_INFO_CHANGED;
     }
 
