@@ -70,6 +70,7 @@ set(DECODER_TESTS
     leading_garbage_resync
     id3v2_skip
     gapless_trim
+    crc_validation
 )
 
 foreach(test_name IN LISTS DECODER_TESTS)

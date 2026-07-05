@@ -9,8 +9,8 @@ diff against the upstream tree linked above.
 
 ### `pvmp3_framedecoder.cpp`
 
-A side-info bounds guard in `pvmp3_framedecoder()`, plus two fixes in
-`fillMainDataBuf()`:
+A side-info bounds guard in `pvmp3_framedecoder()`, a fix in the muted-frame
+recovery path, plus two fixes in `fillMainDataBuf()`:
 
 1. Before `pvmp3_get_side_info()` runs, the frame is rejected (with
    `NO_ENOUGH_MAIN_DATA_ERROR`) unless the input buffer can hold the 4-byte
@@ -46,6 +46,17 @@ A side-info bounds guard in `pvmp3_framedecoder()`, plus two fixes in
    reads exactly `temp` bytes. The `pv_memcpy` rewrites in (2) and (3) leave the
    `fillDataBuf()` single-byte ring-write helper with no callers, so it is
    removed.
+4. The muted-frame recovery path (taken on reservoir underflow,
+   `bytes_to_discard < 0`, or a CRC mismatch with `crcEnabled`) also clears the
+   IMDCT overlap-add history. Upstream cleared the working buffers and the
+   polyphase circular-buffer history but left `overlap[]` holding the previous
+   frame's tail, so a "muted" frame still emitted stale audio through its
+   first granule and the next real frame overlap-added against wrong history;
+   the two effects stacked into a transient louder than the surrounding
+   signal. With the overlap cleared, the muted frame is exact silence and the
+   next frame fades in from clean filterbank state. The ungated
+   `l3-nonstandard-compl-sideinfo-*` conformance vectors improve with this
+   change; the gated set is unaffected.
 
 ### `pvmp3_dec_defs.h`
 

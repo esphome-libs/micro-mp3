@@ -57,7 +57,7 @@ cmake -DENABLE_SANITIZERS=ON -B build && cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-Fixtures are checked into `tests/data/`; regenerate with `tests/generate_test_data.sh` (needs ffmpeg with libmp3lame). Most tests use the all-at-once full-buffer decode of a fixture as a self-consistency reference that streamed and modified-input decodes must match; `decode_accuracy` additionally checks recovered tone power with a Goertzel filter.
+Fixtures are checked into `tests/data/`; regenerate with `tests/generate_test_data.sh` (needs ffmpeg with libmp3lame, plus the lame CLI for the CRC-protected fixture). Most tests use the all-at-once full-buffer decode of a fixture as a self-consistency reference that streamed and modified-input decodes must match; `decode_accuracy` additionally checks recovered tone power with a Goertzel filter.
 
 Add `-DENABLE_WERROR=ON` to the host or test cmake command to treat warnings as errors (off by default). With `ENABLE_SANITIZERS=ON` the build disables only UBSan's `shift-base` check. The OpenCore DSP intentionally left-shifts negatives in ~100 documented places; all other checks stay live.
 

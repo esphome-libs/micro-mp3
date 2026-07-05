@@ -922,6 +922,68 @@ static bool test_gapless_trim() {
     return true;
 }
 
+// Longest run of consecutive near-silent samples (|x| <= 16) in interleaved
+// PCM. A pure sine fixture never sustains one; a muted frame yields >= 1152.
+static size_t longest_quiet_run(const std::vector<int16_t>& pcm) {
+    size_t best = 0;
+    size_t run = 0;
+    for (int16_t s : pcm) {
+        if (s >= -16 && s <= 16) {
+            run++;
+            best = std::max(best, run);
+        } else {
+            run = 0;
+        }
+    }
+    return best;
+}
+
+static bool test_crc_validation() {
+    // Protected fixture: every frame header has the protection bit set and
+    // carries a CRC-16 over the header and side info (encoded with lame -p).
+    std::vector<uint8_t> data = read_file("sine_mono_44100_crc.mp3");
+    CHECK(!data.empty());
+    CHECK_EQ(data[0], 0xFF);
+    CHECK((data[1] & 0x01) == 0);  // protection bit: 0 = CRC present
+
+    // A valid protected stream decodes cleanly: CRC verification is always on
+    // but every frame's CRC matches, so nothing is muted.
+    Mp3Decoder dec;
+    DecodeOutput ref = decode_stream(dec, data.data(), data.size());
+    CHECK(!ref.errored);
+    CHECK(ref.pcm.size() > 1000U);
+    // The reference tone is a continuous sine with no quiet stretch.
+    CHECK(longest_quiet_run(ref.pcm) < 256);
+
+    // Corrupt one side-info byte of a mid-stream frame, past the 4-byte header
+    // and 2-byte CRC so the frame still syncs and the CRC no longer matches.
+    // Walk headers to the frame start (MPEG1 CBR: 144 * bitrate / rate + pad).
+    std::vector<uint8_t> corrupt = data;
+    size_t off = 0;
+    for (int frame = 0; frame < 20; frame++) {
+        CHECK(off + 4 <= corrupt.size());
+        CHECK_EQ(corrupt[off], 0xFF);
+        static const uint32_t BITRATES[] = {0,  32,  40,  48,  56,  64,  80, 96,
+                                            112, 128, 160, 192, 224, 256, 320};
+        const uint32_t bitrate = BITRATES[corrupt[off + 2] >> 4];
+        const uint32_t padding = (corrupt[off + 2] >> 1) & 1;
+        CHECK(bitrate > 0);
+        off += (144 * bitrate * 1000) / 44100 + padding;
+    }
+    corrupt[off + 8] ^= 0x55;
+
+    // The bad frame fails its CRC and is muted, not decoded: no error is
+    // reported, the sample count is preserved, and a frame of silence appears
+    // where the corrupt audio would have been.
+    Mp3Decoder dec_mute;
+    DecodeOutput muted = decode_stream(dec_mute, corrupt.data(), corrupt.size());
+    CHECK(!muted.errored);
+    CHECK_EQ(muted.decode_errors, 0);
+    CHECK_EQ(muted.pcm.size(), ref.pcm.size());
+    CHECK(longest_quiet_run(muted.pcm) >= 1000);
+    return true;
+}
+
 // ============================================================================
 // Runner
 // ============================================================================
@@ -944,6 +1006,7 @@ static const TestCase TESTS[] = {
     {"leading_garbage_resync", test_leading_garbage_resync},
     {"id3v2_skip", test_id3v2_skip},
     {"gapless_trim", test_gapless_trim},
+    {"crc_validation", test_crc_validation},
 };
 
 int main(int argc, char* argv[]) {
