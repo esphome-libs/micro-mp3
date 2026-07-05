@@ -84,7 +84,7 @@ constexpr bool is_sync_pair(uint8_t byte0, uint8_t byte1) {
 // fabricated size would silently swallow real audio, so bound the damage.
 // Genuine mid-stream tags come from stream stitching and are small; even
 // album art fits easily.
-constexpr size_t MP3_MAX_MIDSTREAM_TAG_SIZE = 16U * 1024U * 1024U;
+constexpr size_t MP3_MAX_MIDSTREAM_TAG_SIZE = static_cast<size_t>(16) * 1024 * 1024;
 
 // ID3v1: fixed 128-byte trailer starting with "TAG".
 constexpr size_t MP3_ID3V1_TAG_SIZE = 128;
