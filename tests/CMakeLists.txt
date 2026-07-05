@@ -49,7 +49,8 @@ foreach(fixture
     sine_stereo_22050.mp3
     sine_mono_8000.mp3
     sine_stereo_44100_vbr.mp3
-    sine_stereo_44100_noxing.mp3)
+    sine_stereo_44100_noxing.mp3
+    sine_mono_44100_crc.mp3)
     if(NOT EXISTS ${TEST_DATA_DIR}/${fixture})
         message(FATAL_ERROR "Test fixture missing: ${fixture}; run generate_test_data.sh first")
     endif()
@@ -70,6 +71,7 @@ set(DECODER_TESTS
     leading_garbage_resync
     id3v2_skip
     gapless_trim
+    crc_validation
 )
 
 foreach(test_name IN LISTS DECODER_TESTS)

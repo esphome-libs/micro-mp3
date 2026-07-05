@@ -378,6 +378,22 @@ ERROR_CODE pvmp3_framedecoder(tPVMP3DecoderExternal *pExt,
                       0,
                       480*sizeof(pChVars[RIGHT]->circ_buffer[0]));
 
+            /*
+             * microMP3 FIX: also clear the IMDCT overlap-add history.
+             * Upstream left it holding the previous frame's tail, so a
+             * "muted" frame still emitted stale audio through granule 0 and
+             * the next real frame overlap-added against wrong history; the
+             * two effects stacked into a transient louder than the signal.
+             * With the overlap cleared the muted frame is silent and the
+             * next frame fades in from clean state.
+             */
+            pv_memset((void*)pChVars[ LEFT]->overlap,
+                      0,
+                      SUBBANDS_NUMBER*FILTERBANK_BANDS*sizeof(pChVars[ LEFT]->overlap[0]));
+            pv_memset((void*)pChVars[RIGHT]->overlap,
+                      0,
+                      SUBBANDS_NUMBER*FILTERBANK_BANDS*sizeof(pChVars[RIGHT]->overlap[0]));
+
             pChVars[ LEFT]->used_freq_lines = 575;
             pChVars[RIGHT]->used_freq_lines = 575;
 

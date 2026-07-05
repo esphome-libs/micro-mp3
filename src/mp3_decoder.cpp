@@ -595,10 +595,13 @@ bool Mp3Decoder::parse_vbr_header(const uint8_t* frame, size_t frame_len, Mp3Ver
         return false;
     }
 
-    // The Xing/Info magic sits after the frame header (4 bytes), an optional
-    // 2-byte CRC, and the side information (size depends on version and channel
-    // mode). The CRC is present when the header protection bit (byte 1, bit 0)
-    // is clear, matching how pvmp3 itself consumes it before the side info.
+    // The Xing/Info magic sits after the frame header (4 bytes) and the side
+    // information (size depends on version and channel mode). LAME and
+    // ffmpeg's parser both use that offset even when the header's protection
+    // bit announces a 2-byte CRC between header and side info (the tag then
+    // overlaps the nominal side-info region, which is all padding in a
+    // metadata frame), so check the unadjusted offset first and fall back to
+    // the CRC-adjusted one for encoders that do shift the tag.
     // NOLINTNEXTLINE(readability-magic-numbers)
     const bool mono = (channels == 1);
     size_t side_info_size = 0;
@@ -611,18 +614,27 @@ bool Mp3Decoder::parse_vbr_header(const uint8_t* frame, size_t frame_len, Mp3Ver
     // NOLINTNEXTLINE(readability-magic-numbers)
     const size_t crc_size = ((frame[1] & 0x01) == 0) ? 2 : 0;
     // NOLINTNEXTLINE(readability-magic-numbers)
-    const size_t magic_off = 4 + crc_size + side_info_size;
+    size_t magic_off = 4 + side_info_size;
 
-    // Need the 4-byte magic plus the 4-byte flags field to classify the frame
-    // NOLINTNEXTLINE(readability-magic-numbers)
-    if (frame_len < magic_off + 8) {
-        return false;
+    const uint8_t* magic = nullptr;
+    for (int attempt = 0; attempt < 2; attempt++) {
+        // Need the 4-byte magic plus the 4-byte flags field to classify the frame
+        // NOLINTNEXTLINE(readability-magic-numbers)
+        if (frame_len < magic_off + 8) {
+            return false;
+        }
+        const uint8_t* m = frame + magic_off;
+        if ((m[0] == 'X' && m[1] == 'i' && m[2] == 'n' && m[3] == 'g') ||
+            (m[0] == 'I' && m[1] == 'n' && m[2] == 'f' && m[3] == 'o')) {
+            magic = m;
+            break;
+        }
+        if (crc_size == 0) {
+            return false;
+        }
+        magic_off += crc_size;  // second attempt: CRC-adjusted offset
     }
-
-    const uint8_t* magic = frame + magic_off;
-    const bool is_xing = (magic[0] == 'X' && magic[1] == 'i' && magic[2] == 'n' && magic[3] == 'g');
-    const bool is_info = (magic[0] == 'I' && magic[1] == 'n' && magic[2] == 'f' && magic[3] == 'o');
-    if (!is_xing && !is_info) {
+    if (!magic) {
         return false;
     }
 
@@ -762,7 +774,11 @@ void Mp3Decoder::setup_decode_ext(tPVMP3DecoderExternal& ext, uint8_t* output, s
 
     ext.inputBufferUsedLength = 0;
     ext.equalizerType = static_cast<e_equalization>(this->equalizer_);
-    ext.crcEnabled = 0;
+    // Verify the CRC-16 of protected frames. On a mismatch pvmp3 mutes the
+    // frame (silence, full sample count) rather than decoding corrupt side
+    // info; unprotected frames (no protection bit) are unaffected, so this is
+    // free for the streams almost every encoder produces.
+    ext.crcEnabled = 1;
     ext.pOutputBuffer = reinterpret_cast<int16*>(output);
 
     // Declare the caller's output capacity in int16 samples, capped at the

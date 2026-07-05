@@ -8,7 +8,8 @@
 # mono/stereo, CBR/VBR, and Xing-present/absent to exercise the wrapper's
 # distinct frame paths.
 #
-# Requires: ffmpeg with libmp3lame (tone generation + MP3 encoding).
+# Requires: ffmpeg with libmp3lame (tone generation + MP3 encoding) and the
+# lame CLI (only it exposes -p CRC protection, for the crc fixture).
 
 set -euo pipefail
 
@@ -21,6 +22,10 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
 fi
 if ! ffmpeg -hide_banner -encoders 2>/dev/null | grep -q libmp3lame; then
     echo "error: ffmpeg has no libmp3lame encoder" >&2
+    exit 1
+fi
+if ! command -v lame >/dev/null 2>&1; then
+    echo "error: lame not on PATH (needed for the CRC-protected fixture)" >&2
     exit 1
 fi
 
@@ -75,6 +80,15 @@ gen_stereo sine_stereo_44100_vbr.mp3 44100 500 1700 2 -q:a 4
 
 # MPEG1 stereo CBR with the Xing/Info header suppressed (no gapless trimming).
 gen_stereo sine_stereo_44100_noxing.mp3 44100 500 1700 2 -b:a 128k -write_xing 0
+
+# MPEG1 mono CBR with CRC protection (lame -p): every frame carries a CRC-16
+# over the header and side info, exercising set_crc_enabled(). ffmpeg's
+# libmp3lame wrapper does not expose protection, so encode via the lame CLI.
+ffmpeg -hide_banner -loglevel error -y \
+    -f lavfi -i "sine=frequency=600:sample_rate=44100:duration=1.5" \
+    data/crc_tmp.wav
+lame --quiet -p -b 128 data/crc_tmp.wav data/sine_mono_44100_crc.mp3
+rm -f data/crc_tmp.wav
 
 echo "[test-data] generated:"
 ls -l data/*.mp3
