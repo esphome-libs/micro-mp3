@@ -20,6 +20,17 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Marks functions whose return value must not be ignored (the decoder reports
+// errors only through return codes). [[nodiscard]] needs C++17; the library
+// builds at C++14, so fall back to the GNU attribute there.
+#if defined(__cplusplus) && __cplusplus >= 201703L
+#define MICRO_MP3_NODISCARD [[nodiscard]]
+#elif defined(__GNUC__)
+#define MICRO_MP3_NODISCARD __attribute__((warn_unused_result))
+#else
+#define MICRO_MP3_NODISCARD
+#endif
+
 // Forward declaration for private method signatures (defined by OpenCore decoder)
 struct tPVMP3DecoderExternal;  // NOLINT(readability-identifier-naming)
 
@@ -269,6 +280,7 @@ public:
     ///         - -5 (MP3_STREAM_INFO_CHANGED): Format changed mid-stream;
     ///           reconfigure from the accessors and call again (recoverable)
     ///         - Other negative values: Fatal error
+    MICRO_MP3_NODISCARD
     Mp3Result decode(const uint8_t* input, size_t input_len, uint8_t* output, size_t output_size,
                      size_t& bytes_consumed, size_t& samples_decoded);
 

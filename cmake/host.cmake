@@ -29,8 +29,11 @@ get_filename_component(_MP3_OPENCORE_DIR "${CMAKE_CURRENT_LIST_DIR}/../src/openc
 function(mp3_configure_host TARGET SOURCE_DIR)
     set(MP3_SOURCE_DIR "${_MP3_OPENCORE_DIR}")
 
-    # Private include directories (internal headers)
-    target_include_directories(${TARGET} PRIVATE
+    # Private include directories (internal headers). The forked OpenCore
+    # headers are SYSTEM so first-party C++ that includes them doesn't inherit
+    # their warnings (e.g. C-style casts) -- the header-side counterpart of
+    # the -w suppression below.
+    target_include_directories(${TARGET} SYSTEM PRIVATE
         "${MP3_SOURCE_DIR}"
     )
 
@@ -68,6 +71,13 @@ function(mp3_configure_host TARGET SOURCE_DIR)
         -Wdouble-promotion
         -Wformat=2
         -Wimplicit-fallthrough
+        # Any function not declared in a header must be static; keeps
+        # -Wunused-function able to see dead internal functions. Clang and GCC
+        # spell the C++ variant of this check differently.
+        $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wmissing-prototypes>
+        $<$<CXX_COMPILER_ID:GNU>:-Wmissing-declarations>
+        # Require static_cast/reinterpret_cast over C-style casts
+        -Wold-style-cast
         $<$<BOOL:${ENABLE_WERROR}>:-Werror>
     )
 

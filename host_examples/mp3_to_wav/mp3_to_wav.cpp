@@ -35,12 +35,12 @@ struct DecodeStats {
     size_t decode_errors = 0;
 };
 
-void print_usage(const char* program_name) {
+static void print_usage(const char* program_name) {
     std::cerr << "Usage: " << program_name << " <input.mp3> <output.wav>\n";
     std::cerr << "\nConverts an MP3 file to WAV format.\n";
 }
 
-void print_error_description(micro_mp3::Mp3Result result) {
+static void print_error_description(micro_mp3::Mp3Result result) {
     switch (result) {
         case micro_mp3::MP3_INPUT_INVALID:
             std::cerr << " (MP3_INPUT_INVALID - Invalid input data)";
@@ -61,8 +61,9 @@ void print_error_description(micro_mp3::Mp3Result result) {
 
 /// Create the WavWriter once stream format is known (on MP3_STREAM_INFO_READY).
 /// Returns false if the output file could not be opened.
-bool try_initialize_wav_writer(std::unique_ptr<WavWriter>& wav_writer,
-                               const micro_mp3::Mp3Decoder& decoder, const char* output_file) {
+static bool try_initialize_wav_writer(std::unique_ptr<WavWriter>& wav_writer,
+                                      const micro_mp3::Mp3Decoder& decoder,
+                                      const char* output_file) {
     if (wav_writer) {
         return true;
     }
@@ -88,9 +89,9 @@ bool try_initialize_wav_writer(std::unique_ptr<WavWriter>& wav_writer,
 
 /// Decode all complete MP3 frames from a chunk of input data.
 /// Returns false on fatal error.
-bool decode_chunk(micro_mp3::Mp3Decoder& decoder, const uint8_t* data, size_t data_size,
-                  std::vector<int16_t>& pcm_buffer, std::unique_ptr<WavWriter>& wav_writer,
-                  const char* output_file, DecodeStats& stats) {
+static bool decode_chunk(micro_mp3::Mp3Decoder& decoder, const uint8_t* data, size_t data_size,
+                         std::vector<int16_t>& pcm_buffer, std::unique_ptr<WavWriter>& wav_writer,
+                         const char* output_file, DecodeStats& stats) {
     size_t chunk_offset = 0;
 
     while (chunk_offset < data_size) {
@@ -163,7 +164,8 @@ bool decode_chunk(micro_mp3::Mp3Decoder& decoder, const uint8_t* data, size_t da
     return true;
 }
 
-void print_stats(const DecodeStats& stats, const WavWriter& wav_writer, uint32_t sample_rate) {
+static void print_stats(const DecodeStats& stats, const WavWriter& wav_writer,
+                        uint32_t sample_rate) {
     std::cout << "\nConversion complete!\n";
     std::cout << "Total decode() calls: " << stats.decode_calls << "\n";
     std::cout << "Total bytes read from file: " << stats.total_bytes_read << "\n";
