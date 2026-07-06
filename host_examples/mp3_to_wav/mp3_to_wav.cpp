@@ -61,7 +61,7 @@ void print_error_description(micro_mp3::Mp3Result result) {
 /// Create the WavWriter once stream format is known (on MP3_STREAM_INFO_READY).
 /// Returns false if the output file could not be opened.
 bool try_initialize_wav_writer(std::unique_ptr<WavWriter>& wav_writer,
-                               micro_mp3::Mp3Decoder& decoder, const char* output_file) {
+                               const micro_mp3::Mp3Decoder& decoder, const char* output_file) {
     if (wav_writer) {
         return true;
     }

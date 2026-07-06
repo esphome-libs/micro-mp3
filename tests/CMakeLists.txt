@@ -73,6 +73,7 @@ set(DECODER_TESTS
     trailing_tags
     gapless_trim
     crc_validation
+    equalizer_presets
 )
 
 foreach(test_name IN LISTS DECODER_TESTS)

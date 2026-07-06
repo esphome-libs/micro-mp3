@@ -98,12 +98,12 @@ struct DecodeResult {
 
 // Task parameters
 struct TaskParams {
-    int task_id;
-    const AudioClip* clip;
-    DecodeResult* result;
-    SemaphoreHandle_t done_semaphore;
-    int pinned_core;         // -1 for no pinning, 0 or 1 for specific core
-    bool measure_footprint;  // Only true for single-task runs (see decode_full_file)
+    int task_id{0};
+    const AudioClip* clip{nullptr};
+    DecodeResult* result{nullptr};
+    SemaphoreHandle_t done_semaphore{nullptr};
+    int pinned_core{-1};            // -1 for no pinning, 0 or 1 for specific core
+    bool measure_footprint{false};  // Only true for single-task runs (see decode_full_file)
 };
 
 // Initialize statistics structure
@@ -179,7 +179,8 @@ static DecodeResult decode_full_file(const AudioClip& clip, bool measure_footpri
     // PCM output buffer: heap-allocated to avoid stack overflow in FreeRTOS tasks.
     // Sized once to the MPEG1 stereo worst case; MP3 has a known maximum frame size,
     // so no resize-on-the-fly is needed.
-    uint8_t* pcm_buffer = (uint8_t*)heap_caps_malloc(PCM_OUTPUT_BUFFER_BYTES, MALLOC_CAP_DEFAULT);
+    uint8_t* pcm_buffer =
+        static_cast<uint8_t*>(heap_caps_malloc(PCM_OUTPUT_BUFFER_BYTES, MALLOC_CAP_DEFAULT));
     if (pcm_buffer == nullptr) {
         ESP_LOGE(TAG, "Failed to allocate PCM output buffer");
         result.success = false;
@@ -311,7 +312,7 @@ static void log_decode_result(const char* prefix, DecodeResult* result) {
 
 // FreeRTOS task function for concurrent decoding
 static void decode_task(void* params) {
-    TaskParams* task_params = (TaskParams*)params;
+    TaskParams* task_params = static_cast<TaskParams*>(params);
 
     ESP_LOGI(TAG, "Task %d starting MP3 decode on core %d...", task_params->task_id,
              xPortGetCoreID());
