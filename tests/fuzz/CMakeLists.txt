@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 project(micro_mp3_fuzz CXX C)
 
+# C++17 here, unlike the C++14 the rest of the project builds at: clang's
+# <fuzzer/FuzzedDataProvider.h> uses the C++17 std::is_*_v trait aliases
+# (is_integral_v, is_floating_point_v, is_enum_v) and will not compile at
+# C++14. This raises the whole micro_mp3 library to C++17 in the fuzz build
+# only; the library floor stays C++14 for every other build.
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 

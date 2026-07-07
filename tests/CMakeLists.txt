@@ -37,6 +37,13 @@ target_compile_options(test_mp3_decoder PRIVATE
     -Wextra
     -Wshadow
     -Wimplicit-fallthrough
+    # Any function not declared in a header must be static; keeps
+    # -Wunused-function able to see dead internal functions. Clang and GCC
+    # spell the C++ variant of this check differently.
+    $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wmissing-prototypes>
+    $<$<CXX_COMPILER_ID:GNU>:-Wmissing-declarations>
+    # Require static_cast/reinterpret_cast over C-style casts
+    -Wold-style-cast
     $<$<BOOL:${ENABLE_WERROR}>:-Werror>
 )
 
