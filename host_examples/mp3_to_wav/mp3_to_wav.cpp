@@ -19,6 +19,7 @@
 #include "micro_mp3/mp3_decoder.h"
 #include "wav_writer.h"
 
+#include <cstdint>
 #include <cstring>
 #include <exception>
 #include <fstream>
