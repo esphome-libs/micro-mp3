@@ -100,6 +100,7 @@ Metrics compare_at(const std::vector<int16_t>& dec, const std::vector<uint8_t>& 
 
 }  // namespace
 
+// cppcheck-suppress constParameter  // keep main's standard signature
 int main(int argc, char* argv[]) {
     if (argc < 3) {
         std::fprintf(stderr, "Usage: %s <file.bit> <file.pcm> [--min-psnr X] [--max-diff N]\n",

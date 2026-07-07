@@ -200,8 +200,8 @@ static DecodeOutput decode_stream(Mp3Decoder& dec, const uint8_t* data, size_t l
 // Reference decode: whole buffer offered on every call, no chunking.
 static DecodeOutput reference_decode(const std::string& name) {
     std::vector<uint8_t> data = read_file(name);
-    DecodeOutput out;
     if (data.empty()) {
+        DecodeOutput out;
         out.errored = true;
         return out;
     }
@@ -1040,9 +1040,9 @@ static bool test_trailing_tags() {
     };
 
     struct Case {
-        const char* name;
+        const char* name{nullptr};
         std::vector<uint8_t> tail;
-        bool tiny_chunks;  // also drive at chunk=1
+        bool tiny_chunks{false};  // also drive at chunk=1
     };
     std::vector<uint8_t> id3v1 = make_id3v1();
     std::vector<uint8_t> ape = make_ape(true);
@@ -1162,6 +1162,40 @@ static bool test_crc_validation() {
     return true;
 }
 
+// Equalizer accessor contract and decode-under-EQ coverage: the default is
+// flat, set_equalizer()/get_equalizer() round-trip every preset, and a
+// non-flat preset still decodes the full stream (same PCM length, different
+// samples). Also pins the format constants (bit depth, bytes per sample,
+// minimum output buffer size).
+static bool test_equalizer_presets() {
+    Mp3Decoder dec;
+    CHECK_EQ(dec.get_equalizer(), micro_mp3::MP3_EQ_FLAT);
+    CHECK_EQ(dec.get_bit_depth(), 16);
+    CHECK_EQ(dec.get_bytes_per_sample(), 2);
+    CHECK_EQ(dec.get_min_output_buffer_bytes(), micro_mp3::MP3_MIN_OUTPUT_BUFFER_BYTES);
+
+    for (uint8_t eq = micro_mp3::MP3_EQ_FLAT; eq <= micro_mp3::MP3_EQ_TALK; eq++) {
+        dec.set_equalizer(static_cast<micro_mp3::Mp3Equalizer>(eq));
+        CHECK_EQ(dec.get_equalizer(), eq);
+    }
+
+    std::vector<uint8_t> data = read_file(FIXTURES[0].file);
+    CHECK(!data.empty());
+
+    Mp3Decoder dec_flat;
+    DecodeOutput ref = decode_stream(dec_flat, data.data(), data.size());
+    CHECK(!ref.errored);
+    CHECK(!ref.pcm.empty());
+
+    Mp3Decoder dec_bass;
+    dec_bass.set_equalizer(micro_mp3::MP3_EQ_BASS_BOOST);
+    DecodeOutput boosted = decode_stream(dec_bass, data.data(), data.size());
+    CHECK(!boosted.errored);
+    CHECK_EQ(boosted.pcm.size(), ref.pcm.size());
+    CHECK(boosted.pcm != ref.pcm);
+    return true;
+}
+
 // ============================================================================
 // Runner
 // ============================================================================
@@ -1186,6 +1220,7 @@ static const TestCase TESTS[] = {
     {"trailing_tags", test_trailing_tags},
     {"gapless_trim", test_gapless_trim},
     {"crc_validation", test_crc_validation},
+    {"equalizer_presets", test_equalizer_presets},
 };
 
 int main(int argc, char* argv[]) {

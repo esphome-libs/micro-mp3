@@ -2,7 +2,7 @@
 # Based on existing code style
 
 Language: Cpp
-Standard: c++11
+Standard: c++14
 
 # Base style
 BasedOnStyle: Google

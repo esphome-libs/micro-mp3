@@ -18,6 +18,8 @@
 
 #include "micro_mp3/mp3_decoder.h"
 
+#include "pvmp3_audio_type_defs.h"
+#include "pvmp3_dec_defs.h"
 #include "pvmp3_framedecoder.h"
 #include "pvmp3decoder_api.h"
 
@@ -28,6 +30,7 @@
 #endif
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 
 namespace micro_mp3 {

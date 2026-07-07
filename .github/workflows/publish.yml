@@ -13,6 +13,7 @@ jobs:
   verify-version:
     name: Verify version matches tag
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Check library.json and idf_component.yml against the release tag
@@ -31,6 +32,9 @@ jobs:
   ci-gate:
     name: CI gate
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Reads check-run conclusions via the API; no checkout, so contents is not
+    # needed, but checks:read is.
     permissions:
       checks: read
     steps:
@@ -59,6 +63,7 @@ jobs:
     name: Publish to PlatformIO
     needs: [verify-version, ci-gate]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: platformio
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -77,10 +82,12 @@ jobs:
     name: Publish to Espressif
     needs: [verify-version, ci-gate]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: espressif
     permissions:
-      contents: read
       id-token: write
+      # Job-level permissions replace the workflow default, so re-grant the read checkout needs.
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Publish package

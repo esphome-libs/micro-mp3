@@ -240,7 +240,6 @@ static void run_decode_pass(Mp3Decoder& dec, const std::vector<uint8_t>& payload
         if (samples == 0) {
             break;  // buffer drained
         }
-        total_decoded += samples * dec.get_channels() * sizeof(int16_t);
     }
 }
 
