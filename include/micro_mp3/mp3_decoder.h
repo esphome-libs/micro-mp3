@@ -49,10 +49,11 @@ namespace micro_mp3 {
 /// Success code: MP3_OK (0)
 /// Error codes: All negative values (< 0)
 ///
-/// Three negative codes are recoverable and should be handled before a generic
-/// `result < 0` bail: MP3_DECODE_ERROR (skip the bad frame and continue),
-/// MP3_STREAM_INFO_CHANGED (reconfigure from the accessors and continue), and
-/// MP3_OUTPUT_BUFFER_TOO_SMALL (enlarge the output buffer and continue).
+/// @note Three negative codes are recoverable and should be handled before a
+///       generic `result < 0` bail: MP3_DECODE_ERROR (skip the bad frame and
+///       continue), MP3_STREAM_INFO_CHANGED (reconfigure from the accessors and
+///       continue), and MP3_OUTPUT_BUFFER_TOO_SMALL (enlarge the output buffer
+///       and continue).
 enum Mp3Result : int8_t {
     // Success / informational (>= 0)
     MP3_OK = 0,                 // Success (check samples_decoded output parameter)
@@ -82,10 +83,11 @@ enum Mp3Version : uint8_t {
 ///
 /// Built-in 32-subband equalizer presets from the OpenCore decoder.
 /// Applied in the frequency domain before polyphase synthesis.
-/// All non-flat presets only attenuate (gains <= 0 dB), so they
-/// will not clip but may reduce overall volume.
 ///
 /// Can be changed between decode() calls for immediate effect.
+///
+/// @note All non-flat presets only attenuate (gains <= 0 dB), so they will not
+///       clip but may reduce overall volume.
 enum Mp3Equalizer : uint8_t {
     MP3_EQ_FLAT = 0,        // No equalization (default)
     MP3_EQ_BASS_BOOST = 1,  // Boost low frequencies relative to high
@@ -231,8 +233,9 @@ public:
 
     /// @brief Decode MP3 data and output PCM samples
     ///
-    /// This method processes input data, parsing MP3 frames and decoding
-    /// content to PCM output.
+    /// Accepts arbitrary byte spans: buffers leftover bytes across calls, skips
+    /// ID3v2/APE metadata tags, and resynchronizes on the next frame header
+    /// after corrupt input.
     ///
     /// @param input Pointer to input MP3 data (must not be nullptr)
     /// @param input_len Number of bytes available in input
@@ -530,19 +533,19 @@ private:
     // Member Variables
     // ========================================
 
+    // Struct fields
+    Mp3FrameInfo expected_frame_info_{};  // Parsed header backing expected_frame_length_
+
     // Pointer fields
     void* decoder_memory_{nullptr};   // Decoder state memory (opaque to OpenCore)
     uint8_t* input_buffer_{nullptr};  // Internal input buffer for accumulating MP3 data
 
-    // Struct fields
-    Mp3FrameInfo expected_frame_info_{};  // Parsed header backing expected_frame_length_
-
     // size_t fields
-    size_t expected_frame_length_{0};  // MP3 frame length from parsed header, 0 = unknown
-    size_t tag_skip_remaining_{0};     // Remaining bytes of a detected metadata tag (0 = no skip)
-    size_t input_buffer_fill_{0};      // Number of valid bytes in the internal input buffer
+    size_t expected_frame_length_{0};     // MP3 frame length from parsed header, 0 = unknown
+    size_t input_buffer_fill_{0};         // Number of valid bytes in the internal input buffer
     size_t output_samples_remaining_{0};  // Per-channel output samples still allowed (gapless end)
     size_t start_skip_remaining_{0};      // Leading PCM samples to drop at start (gapless)
+    size_t tag_skip_remaining_{0};  // Remaining bytes of a detected metadata tag (0 = no skip)
 
     // 32-bit fields
     uint32_t bitrate_{0};      // Stream bitrate (set after first successful decode)
