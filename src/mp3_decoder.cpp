@@ -36,7 +36,7 @@
 namespace micro_mp3 {
 
 // ============================================================================
-// ESP32 memory allocation helpers
+// Internal helpers (memory allocation, sync-word and tag detection)
 // ============================================================================
 
 namespace {
@@ -573,7 +573,7 @@ Mp3Result Mp3Decoder::run_probe(const uint8_t* input, size_t input_len, size_t& 
     // clears it while zero-copy decoding, so a later sub-4-byte garbage
     // fragment would pair with this frame's stale length and format in
     // decode_buffered(), pulling the wrong byte count and missing a format
-    // change (found by the fuzzer's output-buffer oracle).
+    // change.
     this->sample_rate_ = info.sample_rate;
     this->output_channels_ = info.channels;
     this->bitrate_ = info.bitrate_kbps;
@@ -717,23 +717,6 @@ Mp3FrameInfo Mp3Decoder::parse_mp3_frame_header(const uint8_t* data, size_t len)
     return info;
 }
 
-Mp3Decoder::PendingTag Mp3Decoder::classify_fragment(const uint8_t* data, size_t len) const {
-    if (is_id3v2_prefix(data, len)) {
-        return PendingTag::ID3V2;
-    }
-    // Trailing-tag magics are only meaningful once the stream is known;
-    // before the probe, leading garbage goes through the resync path.
-    if (this->probe_done_) {
-        if (is_id3v1_prefix(data, len)) {
-            return PendingTag::ID3V1;
-        }
-        if (is_ape_prefix(data, len)) {
-            return PendingTag::APE;
-        }
-    }
-    return PendingTag::NONE;
-}
-
 size_t Mp3Decoder::parse_id3v2_tag_size(const uint8_t* data, size_t len) {
     // ID3v2 header is 10 bytes:
     //   Bytes 0-2: "ID3" signature
@@ -779,6 +762,23 @@ size_t Mp3Decoder::parse_id3v2_tag_size(const uint8_t* data, size_t len) {
     }
 
     return total;
+}
+
+Mp3Decoder::PendingTag Mp3Decoder::classify_fragment(const uint8_t* data, size_t len) const {
+    if (is_id3v2_prefix(data, len)) {
+        return PendingTag::ID3V2;
+    }
+    // Trailing-tag magics are only meaningful once the stream is known;
+    // before the probe, leading garbage goes through the resync path.
+    if (this->probe_done_) {
+        if (is_id3v1_prefix(data, len)) {
+            return PendingTag::ID3V1;
+        }
+        if (is_ape_prefix(data, len)) {
+            return PendingTag::APE;
+        }
+    }
+    return PendingTag::NONE;
 }
 
 bool Mp3Decoder::parse_vbr_header(const uint8_t* frame, size_t frame_len, Mp3Version version,
@@ -1090,7 +1090,7 @@ Mp3Result Mp3Decoder::decode_direct(tPVMP3DecoderExternal& ext, const uint8_t* i
     // here. pvmp3's sync-scan path (pvmp3_header_sync / fillMainDataBuf) does
     // not bound-check the caller's buffer against the position of the found
     // sync, so a sync discovered near the tail of a short buffer causes
-    // reads past the end (found via ASan fuzzing). Instead, do a lightweight
+    // reads past the end. Instead, do a lightweight
     // byte-level scan for a candidate sync pair and let the next decode()
     // call re-probe at that position through the validated happy path.
     size_t skip = 1;  // offset 0 already failed; guarantee forward progress
