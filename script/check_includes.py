@@ -26,7 +26,9 @@ unreported. It errs toward false negatives; anything it does report is real.
 Usage: check_includes.py [--fix]
   --fix  apply unused-include removals in place (missing includes are always
          reported for manual fixing; automatic insertion cannot honor the
-         matching-header relaxation)
+         matching-header relaxation). Edits are applied only after every
+         analysis completes, and a host+esp dual-checked file is only edited
+         when both passes agree on the removals.
 
 Requires clang-include-cleaner (apt: clang-tools-18, brew: llvm).
 """
@@ -152,9 +154,13 @@ def ensure_compile_db():
     )
 
 
-def gather_files(dirs):
+def gather_files(dirs, prune=()):
+    """Collect checkable files under dirs. prune lists the other categories'
+    roots: a nested root (e.g. src/esp under src) belongs only to its own
+    category's walk."""
     exclude_res = [re.compile(p) for p in EXCLUDE_BASENAMES]
     exclude_dirs = {os.path.join(ROOT, d) for d in EXCLUDE_DIRS}
+    exclude_dirs |= {os.path.join(ROOT, d) for d in prune}
     files = []
     for d in dirs:
         top = os.path.join(ROOT, d)
@@ -250,9 +256,9 @@ def main():
     ensure_compile_db()
     materialize_stubs()
 
-    both = gather_files(CHECK_BOTH)
-    host_only = gather_files(CHECK_HOST_ONLY)
-    esp_only = gather_files(CHECK_ESP_ONLY)
+    both = gather_files(CHECK_BOTH, prune=CHECK_HOST_ONLY + CHECK_ESP_ONLY)
+    host_only = gather_files(CHECK_HOST_ONLY, prune=CHECK_ESP_ONLY)
+    esp_only = gather_files(CHECK_ESP_ONLY, prune=CHECK_HOST_ONLY)
 
     headers = [f for f in both + host_only + esp_only
                if os.path.splitext(f)[1] in HEADER_EXTS]
@@ -263,50 +269,69 @@ def main():
 
     failures = 0
     errors = 0
-    with concurrent.futures.ThreadPoolExecutor(os.cpu_count()) as pool:
-        results = pool.map(
+    with concurrent.futures.ThreadPoolExecutor(os.cpu_count() or 1) as pool:
+        # Materialize every result before consuming any: --fix edits files in
+        # place from the main thread, which must not happen while a worker may
+        # still be analyzing the same file (dual-checked files are two jobs).
+        results = list(pool.map(
             lambda job: (job, run_engine(binary, job[0], job[1])), jobs
-        )
-        for (path, esp_pass), (inserts, removes, error) in results:
-            rel = os.path.relpath(path, ROOT)
-            tag = "esp" if esp_pass else "host"
-            if error:
-                errors += 1
-                print(f"ERROR {rel} [{tag}]: could not analyze\n  {error}")
-                continue
+        ))
 
-            # Relaxation: a cpp may rely on its matching headers' direct
-            # includes -- including the matching headers themselves (foo.cpp
-            # reaching foo.h through foo_impl.h is fine).
-            if inserts and os.path.splitext(path)[1] in SOURCE_EXTS:
-                partners = matching_headers(path, headers)
-                covered = set()
-                for partner in partners:
-                    covered |= direct_includes(partner)
-                    covered.add(os.path.relpath(partner, ROOT))
-                if covered:
-                    inserts = [
-                        h for h in inserts
-                        if spelling(h) not in covered
-                        and not any(p.endswith(os.sep + spelling(h)) for p in covered)
-                    ]
+    dual_checked = set(both)
+    fix_requests = {}  # path -> {esp_pass: removes reported by that pass}
+    for (path, esp_pass), (inserts, removes, error) in results:
+        rel = os.path.relpath(path, ROOT)
+        tag = "esp" if esp_pass else "host"
+        if error:
+            errors += 1
+            print(f"ERROR {rel} [{tag}]: could not analyze\n  {error}")
+            continue
 
-            if not inserts and not removes:
-                continue
-            failures += 1
-            print(f"FAIL {rel} [{tag}]")
-            for h in inserts:
-                print(f"  missing include: {h}")
-            for h in removes:
-                print(f"  unused include:  {h}")
-            if args.fix and removes:
-                _, _, fix_err = run_engine(binary, path, esp_pass, fix_removals=True)
-                print(f"  applied removals" if not fix_err
-                      else f"  fix failed: {fix_err}")
+        # Relaxation: a cpp may rely on its matching headers' direct
+        # includes -- including the matching headers themselves (foo.cpp
+        # reaching foo.h through foo_impl.h is fine).
+        if inserts and os.path.splitext(path)[1] in SOURCE_EXTS:
+            partners = matching_headers(path, headers)
+            covered = set()
+            for partner in partners:
+                covered |= direct_includes(partner)
+                covered.add(os.path.relpath(partner, ROOT))
+            if covered:
+                inserts = [
+                    h for h in inserts
+                    if spelling(h) not in covered
+                    and not any(p.endswith(os.sep + spelling(h)) for p in covered)
+                ]
+
+        if not inserts and not removes:
+            continue
+        failures += 1
+        print(f"FAIL {rel} [{tag}]")
+        for h in inserts:
+            print(f"  missing include: {h}")
+        for h in removes:
+            print(f"  unused include:  {h}")
+        if args.fix and removes:
+            fix_requests.setdefault(path, {})[esp_pass] = removes
+
+    # Apply removals only now, with all analyses done. A dual-checked file is
+    # edited only when both passes reported the same removals: --edit applies
+    # one pass's whole view, and an include that only one pass calls unused may
+    # be load-bearing (or invisible, if guarded) in the other.
+    for path, per_pass in sorted(fix_requests.items()):
+        rel = os.path.relpath(path, ROOT)
+        if path in dual_checked and per_pass.get(False) != per_pass.get(True):
+            print(f"skipped fix {rel}: host/esp passes disagree on removals; "
+                  "fix manually")
+            continue
+        esp_pass = False if False in per_pass else True
+        _, _, fix_err = run_engine(binary, path, esp_pass, fix_removals=True)
+        print(f"fixed {rel}: removals applied" if not fix_err
+              else f"fix failed {rel}: {fix_err}")
 
     if errors:
         print(f"\ncheck-includes: {errors} file(s) could not be analyzed "
-              "(missing stub symbol? see script/esp_stubs/README.md)")
+              "(missing stub symbol? see script/esp_stubs.py)")
     if failures:
         print(f"check-includes: {failures} failing check(s)")
     if errors or failures:

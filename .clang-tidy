@@ -1,5 +1,5 @@
 # micro-mp3 clang-tidy configuration
-# C++11 compatible, embedded-friendly checks
+# C++14 compatible, embedded-friendly checks
 
 Checks: >
   -*,
@@ -50,7 +50,7 @@ Checks: >
   readability-static-accessed-through-instance,
   readability-static-definition-in-anonymous-namespace,
   readability-string-compare,
-  readability-uppercase-literal-suffix,
+  readability-uppercase-literal-suffix
 
 WarningsAsErrors: '*'
 

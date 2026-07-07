@@ -43,6 +43,7 @@ cppcheck \
     --suppress='*:src/opencore-mp3dec/*' \
     --suppress=useStlAlgorithm \
     --suppress='functionStatic:include/micro_mp3/*' \
+    -i src/opencore-mp3dec \
     -i tests/build \
     -i tests/fuzz/build \
     -i tests/conformance/build \
@@ -50,7 +51,7 @@ cppcheck \
     -i examples/decode_benchmark/.pio \
     -I include \
     -I src/opencore-mp3dec \
-    src/mp3_decoder.cpp \
+    src \
     host_examples \
     tests \
     examples
