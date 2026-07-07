@@ -17,8 +17,8 @@
 
 #pragma once
 
-#include <stddef.h>
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
 
 // Marks functions whose return value must not be ignored (the decoder reports
 // errors only through return codes). [[nodiscard]] needs C++17; at C++14 (the
