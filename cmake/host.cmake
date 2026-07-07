@@ -56,7 +56,9 @@ function(mp3_configure_host TARGET SOURCE_DIR)
         target_compile_options(${TARGET} PRIVATE -O2)
     endif()
 
-    # Require C++14 for the OpenCore MP3 C++ sources
+    # Require at least C++14 for the OpenCore MP3 C++ sources. cxx_std_14 sets a
+    # floor, not a ceiling: a consumer may build the library higher (the fuzz
+    # target compiles it at C++17), and this does not downgrade that.
     target_compile_features(${TARGET} PRIVATE cxx_std_14)
 
     # Strict warnings for our first-party wrapper sources. The OpenCore sources

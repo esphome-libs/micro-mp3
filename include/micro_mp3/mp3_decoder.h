@@ -21,8 +21,10 @@
 #include <stdint.h>
 
 // Marks functions whose return value must not be ignored (the decoder reports
-// errors only through return codes). [[nodiscard]] needs C++17; the library
-// builds at C++14, so fall back to the GNU attribute there.
+// errors only through return codes). [[nodiscard]] needs C++17; at C++14 (the
+// library's minimum standard) fall back to the GNU attribute. The standard the
+// library is compiled at varies by build, so this keys off __cplusplus per
+// translation unit rather than assuming one.
 #if defined(__cplusplus) && __cplusplus >= 201703L
 #define MICRO_MP3_NODISCARD [[nodiscard]]
 #elif defined(__GNUC__)
